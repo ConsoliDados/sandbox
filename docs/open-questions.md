@@ -11,7 +11,7 @@ Options:
 - (b) Rebuild only when manifest changes (fast, but stale if base image rotates).
 - (c) `--rebuild` flag, never auto.
 
-Leaning (c) for predictability. Decide in Phase 1.
+Leaning (c) for predictability. Decide in Phase 1 implementation.
 
 ### OQ-002 — How to handle `git` commits from inside the read-only container? (2026-05-06)
 
@@ -33,27 +33,9 @@ Leaning (c). Decide in Phase 2.
 
 Leaning (c). Decide in Phase 2.
 
-### OQ-004 — Default UID for container user (2026-05-06)
-
-Options:
-- (a) Match host UID/GID via `--user $(id -u):$(id -g)`. Pros: file ownership clean. Cons: container's `node_modules` etc. own files as host user.
-- (b) Fixed nonroot UID (e.g. 1500). Pros: predictable. Cons: ownership mismatch with host.
-
-Leaning (a). Decide in Phase 1.
-
-### OQ-005 — Auto-detect lang failures: which manifest takes precedence? (2026-05-06)
-
-If a project has both `package.json` and `Cargo.toml` (rare but possible — e.g. Tauri), which lang wins?
-
-- (a) Most-specific wins (rust because Cargo.toml is rarer than package.json — heuristic).
-- (b) Manifests have a `priority` field; highest wins.
-- (c) Error and force user to specify `--lang`.
-
-Leaning (b). Decide in Phase 1.
-
 ### OQ-006 — Future shell support (2026-05-06)
 
-User asked for an adendum: when going OSS, support bash and fish in addition to zsh. Plan:
+User asked for an addendum: when going OSS, support bash and fish in addition to zsh. Plan:
 
 - Manifest `extra_packages` already extensible.
 - The `--shell` flag exists in SRS.
@@ -71,4 +53,20 @@ Decide in Phase 4.
 
 ## Resolved
 
-(None yet.)
+### OQ-004 — Default UID for container user (Resolved 2026-05-06, Phase 1)
+
+**Decision:** numeric `--user $(id -u):$(id -g)` derived from the host user at run time. The hardening Plan adds `--user` as a numeric pair, not a username, to avoid mismatches with images that don't have the corresponding user account.
+
+**Rationale:** matching the host UID/GID keeps file ownership clean on bind-mounted directories. Named volumes (`node_modules`, `target`) are owned by the same UID, which is harmless since the host never reads them directly. Numeric form sidesteps the "image has user `node` (uid 1000) but my host is uid 1500" problem.
+
+**Edge case:** if the host UID is 0 (running sandbox as root), we still pass `--user 0:0` — the operator clearly knows what they want. We log a warning.
+
+### OQ-005 — Auto-detect lang failures: which manifest takes precedence? (Resolved 2026-05-06, Phase 1)
+
+**Decision:** language manifests have a `priority: u32` field (default 0). On multi-match, the highest priority wins. Ties are resolved by "more `detect` files matched"; remaining ties produce an error and require `--lang` to disambiguate.
+
+**Rationale:** explicit, predictable, and user-overridable. A user installing a custom manifest with `priority = 100` always wins over bundled defaults.
+
+**Defaults:** `node = 0`, `bun = 10`, `rust = 20`. Rust wins over Node (rare conflict via Tauri). Bun wins over Node (when both `bun.lockb` and `package.json` are present, Bun is the more specific tool).
+
+See: ADR-0006, `languages/README.md`.

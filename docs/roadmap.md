@@ -19,22 +19,38 @@ The repo compiles (`cargo check`) but the CLI is a stub. No subcommand actually 
 - [x] ADR index with 10 drafts (titles + status only — content deferred to phases that need them)
 - [x] `languages/` manifests for node, bun, rust (ported from `~/Dev/docker-sandbox/`)
 - [x] `scripts/dev/` (lint, test, fmt)
-- [ ] `cargo check` passes (verify after first session)
-- [ ] First commit
+- [x] `cargo check` passes
+- [x] First commit on `main` (`bed3741`)
+- [x] Git Flow: `main` / `dev` branches; work happens on `feat/*`
 
 ### Phase 1 — Run/Down/Nuke + manifests + dotfiles
 
 Goal: the CLI subset that replicates current `docker-sandbox` functionality, but secure-by-default.
 
-- [ ] `sandbox run [PATH]` (auto-detect lang, name container `sandbox-<hash[..12]>`, mount source, attach shell)
-- [ ] `sandbox down [PROJECT]` (stop, keep state)
-- [ ] `sandbox nuke [PROJECT] [--all]` (remove container + volumes + state)
-- [ ] `sandbox-core::LangManifest` loader + detector
-- [ ] `sandbox-core::Project::hash` (`git ls-files` based, walkdir fallback)
-- [ ] `sandbox-core::State` store (XDG-aware)
-- [ ] Dotfiles bind mount (zshrc + starship)
-- [ ] ADR-0001 finalized (Rust binary)
-- [ ] ADR-0009 finalized (container reuse semantics)
+Branch: `feat/lifecycle-mvp`.
+
+- [x] ADR-0001 (Rust binary) accepted
+- [x] ADR-0002 (Docker shell-out vs bollard) accepted
+- [x] ADR-0006 (TOML manifest) accepted
+- [x] ADR-0007 (XDG state storage) accepted
+- [x] ADR-0009 (container reuse semantics) accepted
+- [x] OQ-004 (UID strategy) resolved → numeric `--user $(id -u):$(id -g)`
+- [x] OQ-005 (multi-match priority) resolved → `priority` field, ties on detect-count, error otherwise
+- [ ] `sandbox-core::paths` (XDG resolution)
+- [ ] `sandbox-core::lang` (LangManifest loader + detector)
+- [ ] `sandbox-core::hash` (`git ls-files` based, walkdir fallback)
+- [ ] `sandbox-core::profile` + `config` (load `~/.config/sandbox/config.toml`)
+- [ ] `sandbox-core::project` (`Project` resolution + container_name)
+- [ ] `sandbox-core::state` (per-project state at `$XDG_DATA_HOME/sandbox/containers/<hash>/`)
+- [ ] `sandbox-docker::Plan` (pure data describing a `docker run`)
+- [ ] `sandbox-docker::run/start/exec/stop/rm`
+- [ ] `sandbox-docker::volume::ensure` (named volumes)
+- [ ] `sandbox-docker::network::ensure` (`sandbox-internal` network)
+- [ ] `sandbox-cli::commands::run` wires it all up
+- [ ] `sandbox-cli::commands::down`
+- [ ] `sandbox-cli::commands::nuke`
+- [ ] Dotfiles bind mount (zshrc + starship; hybrid with `~/.config/sandbox/zsh/.zshrc.sandbox`)
+- [ ] Integration test: `sandbox run` on a node project, drop into shell, see `package.json`
 
 ### Phase 2 — Volume strategy + network isolation
 

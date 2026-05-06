@@ -13,15 +13,15 @@ ADRs capture decisions that have lasting structural consequences. They are short
 
 | # | Title | Status | Phase to write |
 |---|---|---|---|
-| 0001 | Rewrite as Rust binary CLI (vs evolving the shell script) | Draft | Phase 1 |
-| 0002 | Docker integration via shell-out instead of bollard | Draft | Phase 1 |
+| 0001 | Rewrite as Rust binary CLI (vs evolving the shell script) | Accepted | Phase 1 |
+| 0002 | Docker integration via shell-out instead of bollard | Accepted | Phase 1 |
 | 0003 | Volume strategy: read-only source + named volumes for package dirs | Draft | Phase 2 |
 | 0004 | Network isolation by default (`sandbox-internal`); runtime toggle | Draft | Phase 2 |
 | 0005 | Reverse proxy via Traefik sidecar | Draft | Phase 5 |
-| 0006 | Language manifests as TOML (with future YAML opt-in) | Draft | Phase 1 |
-| 0007 | State storage follows XDG Base Directory spec | Draft | Phase 2 |
+| 0006 | Language manifests as TOML (with future YAML opt-in) | Accepted | Phase 1 |
+| 0007 | State storage follows XDG Base Directory spec | Accepted | Phase 1 |
 | 0008 | Scan pipeline: YARA → heuristics → (deferred) LLM | Draft | Phase 4 |
-| 0009 | Container reuse semantics for `run` / `down` / `nuke` | Draft | Phase 1 |
+| 0009 | Container reuse semantics for `run` / `down` / `nuke` | Accepted | Phase 1 |
 | 0010 | Project compose deps: detect, validate, integrate as sibling network | Draft | Phase 6 |
 
 ## Template
