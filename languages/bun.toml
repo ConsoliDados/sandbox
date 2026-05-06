@@ -1,0 +1,18 @@
+name = "bun"
+display_name = "Bun"
+image = "oven/bun:1.3.6"
+detect = ["bun.lockb", "bun.lock", "bunfig.toml"]
+priority = 10
+package_dirs = ["node_modules"]
+default_port = 3000
+extra_packages = ["zsh", "git", "starship"]
+shell = "/bin/zsh"
+workdir = "/app"
+
+[port_detection]
+patterns = [
+    'Bun\.serve\(\s*\{[^}]*port:\s*(\d+)',
+    'app\.listen\((\d+)',
+    '\.listen\(\s*(\d+)',
+]
+env_keys = ["PORT", "APP_PORT", "HTTP_PORT", "SERVER_PORT"]

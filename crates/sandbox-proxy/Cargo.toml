@@ -1,0 +1,20 @@
+[package]
+name = "sandbox-proxy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sandbox-core.workspace = true
+
+thiserror.workspace = true
+serde.workspace = true
+toml.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+regex.workspace = true
+
+[lints]
+workspace = true

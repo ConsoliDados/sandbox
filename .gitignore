@@ -1,0 +1,11 @@
+/target
+**/*.rs.bk
+*.pdb
+.env
+.env.local
+*.swp
+*.swo
+.DS_Store
+.idea/
+.vscode/
+.claude/

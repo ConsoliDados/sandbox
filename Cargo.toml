@@ -1,0 +1,52 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+authors = ["Johnny Carreiro"]
+repository = "https://github.com/johnnycarreiro/sandbox"
+rust-version = "1.85"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unreachable_pub = "warn"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+todo = "warn"
+unimplemented = "warn"
+indexing_slicing = "warn"
+dbg_macro = "warn"
+print_stdout = "allow"
+print_stderr = "allow"
+
+[workspace.dependencies]
+sandbox-core = { path = "crates/sandbox-core" }
+sandbox-docker = { path = "crates/sandbox-docker" }
+sandbox-scan = { path = "crates/sandbox-scan" }
+sandbox-proxy = { path = "crates/sandbox-proxy" }
+
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "fs", "io-util"] }
+clap = { version = "4", features = ["derive", "env"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+sha2 = "0.10"
+hex = "0.4"
+walkdir = "2"
+regex = "1"
+directories = "5"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"

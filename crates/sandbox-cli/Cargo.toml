@@ -1,0 +1,26 @@
+[package]
+name = "sandbox-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "sandbox"
+path = "src/main.rs"
+
+[dependencies]
+sandbox-core.workspace = true
+sandbox-docker.workspace = true
+sandbox-scan.workspace = true
+sandbox-proxy.workspace = true
+
+anyhow.workspace = true
+clap.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[lints]
+workspace = true
