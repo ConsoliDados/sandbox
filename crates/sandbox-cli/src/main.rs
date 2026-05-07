@@ -91,7 +91,7 @@ fn main() -> anyhow::Result<()> {
         None => {
             <Cli as clap::CommandFactory>::command().print_help()?;
             println!();
-            return Ok(());
+            Ok(())
         }
         Some(cmd) => {
             // Phase 0: stub — no command bodies yet. See docs/roadmap.md.

@@ -2,18 +2,16 @@
 //!
 //! See `crates/sandbox-core/AGENTS.md` for boundaries and conventions.
 
-// Phase 0: module placeholders. Implementations land in Phase 1+.
-// See docs/roadmap.md.
+// Tests use `expect()` / `unwrap()` to fail fast on infrastructure setup
+// (tempdir creation, fixture writes). Lints are kept strict for non-test code.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
-pub mod error {
-    /// Error type for `sandbox-core`. Phase 0 placeholder.
-    #[derive(Debug, thiserror::Error)]
-    pub enum Error {
-        #[error("not implemented yet (Phase 0 skeleton)")]
-        NotImplemented,
-    }
-
-    pub type Result<T> = std::result::Result<T, Error>;
-}
+pub mod error;
+pub mod hash;
+pub mod lang;
+pub mod paths;
 
 pub use error::{Error, Result};
+pub use hash::{ProjectHash, project_hash};
+pub use lang::{LangManifest, LanguageId, LanguageRegistry, PortDetection};
+pub use paths::Paths;
