@@ -15,7 +15,7 @@ pub enum Error {
     #[error("project path does not exist or is not a directory: {0}")]
     ProjectPathInvalid(PathBuf),
 
-    #[error("invalid language manifest at {path}: {reason}")]
+    #[error("invalid manifest at {path}: {reason}")]
     InvalidManifest { path: PathBuf, reason: String },
 
     #[error("could not detect a language for {0}; specify --lang")]
@@ -29,6 +29,9 @@ pub enum Error {
 
     #[error("language not found in registry: {0}")]
     LanguageNotFound(String),
+
+    #[error("profile not found in config: {0}")]
+    ProfileNotFound(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
