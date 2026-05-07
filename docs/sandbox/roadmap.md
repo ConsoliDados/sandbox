@@ -112,10 +112,10 @@ Branch: `feat/lifecycle-mvp`.
 
 When starting a new Claude Code session in this repo:
 
-1. **Always** read `docs/roadmap.md` first (you're here).
+1. **Always** read `roadmap.md` first (you're here).
 2. Read `AGENTS.md` for repo shape and reading priority.
 3. Identify the **current phase** above; the first unchecked `[ ]` item is the next task.
-4. Consult `docs/open-questions.md` for unresolved decisions that may block progress.
+4. Consult `open-questions.md` for unresolved decisions that may block progress.
 5. Pick up from where the last session left off.
 
 If the user gives a high-level instruction (e.g. "vamos pra fase 2"), the assistant should:
@@ -125,7 +125,7 @@ If the user gives a high-level instruction (e.g. "vamos pra fase 2"), the assist
 
 ## Out of scope (for now)
 
-See `docs/open-questions.md` and `docs/sad.md` "Future directions". Notably:
+See `open-questions.md` and `sad.md` "Future directions". Notably:
 
 - macOS support (Linux-only for v0.1)
 - LLM-assisted scan

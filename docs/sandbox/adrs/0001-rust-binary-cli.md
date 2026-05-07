@@ -45,5 +45,5 @@ Negative:
 ## References
 
 - ADR-0002 (Docker integration approach: shell-out, preserves transparency)
-- `docs/threat-model.md` (security posture this rewrite enables)
+- `../threat-model.md` (security posture this rewrite enables)
 - `~/Dev/docker-sandbox/sandbox.sh` (legacy reference, frozen)

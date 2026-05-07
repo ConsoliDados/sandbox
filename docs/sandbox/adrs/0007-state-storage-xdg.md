@@ -43,5 +43,5 @@ Negative:
 ## References
 
 - XDG Base Directory Specification
-- `docs/srs.md` "State directory layout"
+- `../srs.md` "State directory layout"
 - `directories` crate

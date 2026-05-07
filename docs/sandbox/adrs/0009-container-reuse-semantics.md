@@ -64,6 +64,6 @@ Negative:
 
 ## References
 
-- `docs/srs.md` `run` / `down` / `nuke` sections
-- `docs/open-questions.md` OQ-001 (rebuild policy on Dockerfile change)
+- `../srs.md` `run` / `down` / `nuke` sections
+- `../open-questions.md` OQ-001 (rebuild policy on Dockerfile change)
 - `crates/sandbox-core/AGENTS.md` (Project, ProjectHash)

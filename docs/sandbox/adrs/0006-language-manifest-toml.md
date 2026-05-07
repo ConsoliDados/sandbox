@@ -43,4 +43,4 @@ The schema is versioned implicitly by the binary's release. Once we hit v0.2 and
 
 - `languages/README.md` (canonical schema)
 - `crates/sandbox-core/AGENTS.md`
-- `docs/open-questions.md` OQ-005 (multi-match priority — resolved by `priority` field)
+- `../open-questions.md` OQ-005 (multi-match priority — resolved by `priority` field)

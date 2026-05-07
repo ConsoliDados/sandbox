@@ -57,4 +57,4 @@ Links to issues, prior art, related ADRs.
 
 ## When to write a new ADR
 
-See `docs/playbook.md` § 9. In short: changing a default that affects security posture, adding a new external dep, changing the CLI surface, or picking between approaches with lasting trade-offs.
+See `../playbook.md` § 9. In short: changing a default that affects security posture, adding a new external dep, changing the CLI surface, or picking between approaches with lasting trade-offs.

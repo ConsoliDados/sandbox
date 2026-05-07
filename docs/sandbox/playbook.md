@@ -62,7 +62,7 @@ Forbidden at workspace level. If you find a case where you think you need it, wr
   pub fn project_hash(path: &ProjectPath) -> Result<ProjectHash> { ... }
   ```
 - **Adapter crates may use lighter doc comments** but must explain non-obvious external interactions.
-- **Never leave TODO/FIXME without an associated `docs/open-questions.md` entry or GH issue.**
+- **Never leave TODO/FIXME without an associated `open-questions.md` entry or GH issue.**
 
 ## 6. Logging
 
@@ -101,7 +101,7 @@ Required when:
 - Changing the CLI surface (subcommand added/removed/renamed).
 - Choosing between two approaches that have lasting trade-offs.
 
-Format: `docs/adrs/NNNN-title.md`. Use the template in `docs/adrs/README.md`.
+Format: `adrs/NNNN-title.md`. Use the template in `adrs/README.md`.
 
 ## 10. Things to NOT do
 

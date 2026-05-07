@@ -33,7 +33,7 @@ blocks: []
 
 ## Open questions
 
-<!-- Surface to docs/open-questions.md if they affect the plan. -->
+<!-- Surface to open-questions.md if they affect the plan. -->
 
 ## Branch
 

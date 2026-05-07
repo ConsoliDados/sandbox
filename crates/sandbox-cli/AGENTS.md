@@ -4,7 +4,7 @@
 
 Top-level binary. Argument parsing (clap), subcommand dispatch, top-level error reporting, logging setup.
 
-This crate owns the **user-facing surface** of the tool. The SRS at `docs/srs.md` is its specification.
+This crate owns the **user-facing surface** of the tool. The SRS at `docs/sandbox/srs.md` is its specification.
 
 ## Boundaries
 
@@ -55,4 +55,4 @@ cargo run -p sandbox-cli -- run .
 ## Points of attention
 
 - The CLI surface is a public contract. Renaming a subcommand or flag requires an ADR and a deprecation period.
-- Default values should match `docs/srs.md`. If they diverge, fix the code or fix the doc — don't let drift accumulate.
+- Default values should match `docs/sandbox/srs.md`. If they diverge, fix the code or fix the doc — don't let drift accumulate.

@@ -88,7 +88,7 @@ A Profile is a named bundle of safety flags. Profiles compose with CLI flags (CL
 
 ### `core::LangManifest`
 
-Loaded from `languages/*.toml`. Schema in [`languages/README.md`](../languages/README.md). Hot-reloaded when the file changes (no rebuild).
+Loaded from `languages/*.toml`. Schema in [`languages/README.md`](../../languages/README.md). Hot-reloaded when the file changes (no rebuild).
 
 ### `core::State`
 
