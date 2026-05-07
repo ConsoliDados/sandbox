@@ -79,3 +79,5 @@ Each crate owns its own conventions for its domain. When working inside `crates/
 | Add a subcommand | `crates/sandbox-cli/src/commands/<name>.rs` + register in `commands/mod.rs` + update `docs/srs.md`. |
 | Change Docker behavior | `crates/sandbox-docker/`. Document deviation from previous via ADR if user-visible. |
 | Change network/security defaults | Requires ADR. Update `docs/threat-model.md`. |
+
+
