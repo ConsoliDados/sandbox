@@ -78,53 +78,60 @@ mod tests {
         }
     }
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn save_then_load_roundtrip() {
-        let tmp = tempfile::tempdir().expect("tempdir");
+    fn save_then_load_roundtrip() -> TestResult {
+        let tmp = tempfile::tempdir()?;
         let dir = tmp.path().join("containers").join("abcdef012345");
         let m = fixture();
-        m.save(&dir).expect("save");
-        let loaded = Meta::load(&dir).expect("load");
+        m.save(&dir)?;
+        let loaded = Meta::load(&dir)?;
         assert_eq!(loaded, m);
+        Ok(())
     }
 
     #[test]
-    fn save_creates_missing_dir() {
-        let tmp = tempfile::tempdir().expect("tempdir");
+    fn save_creates_missing_dir() -> TestResult {
+        let tmp = tempfile::tempdir()?;
         let dir = tmp.path().join("a").join("b").join("c");
         assert!(!dir.exists());
-        fixture().save(&dir).expect("save");
+        fixture().save(&dir)?;
         assert!(dir.is_dir());
         assert!(dir.join("meta.toml").is_file());
+        Ok(())
     }
 
     #[test]
-    fn exists_at_reports_correctly() {
-        let tmp = tempfile::tempdir().expect("tempdir");
+    fn exists_at_reports_correctly() -> TestResult {
+        let tmp = tempfile::tempdir()?;
         let dir = tmp.path().join("nope");
         assert!(!Meta::exists_at(&dir));
-        fixture().save(&dir).expect("save");
+        fixture().save(&dir)?;
         assert!(Meta::exists_at(&dir));
+        Ok(())
     }
 
     #[test]
-    fn load_missing_meta_yields_io_error() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let err = Meta::load(tmp.path()).expect_err("should fail");
-        assert!(matches!(err, Error::Io { .. }));
+    fn load_missing_meta_yields_io_error() -> TestResult {
+        let tmp = tempfile::tempdir()?;
+        let result = Meta::load(tmp.path());
+        assert!(matches!(result, Err(Error::Io { .. })));
+        Ok(())
     }
 
     #[test]
-    fn load_garbage_yields_invalid_manifest() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        std::fs::write(tmp.path().join("meta.toml"), "[[[ not toml").expect("write");
-        let err = Meta::load(tmp.path()).expect_err("should fail");
-        assert!(matches!(err, Error::InvalidManifest { .. }));
+    fn load_garbage_yields_invalid_manifest() -> TestResult {
+        let tmp = tempfile::tempdir()?;
+        std::fs::write(tmp.path().join("meta.toml"), "[[[ not toml")?;
+        let result = Meta::load(tmp.path());
+        assert!(matches!(result, Err(Error::InvalidManifest { .. })));
+        Ok(())
     }
 
     #[test]
-    fn old_state_without_optional_fields_still_loads() {
-        let tmp = tempfile::tempdir().expect("tempdir");
+    fn old_state_without_optional_fields_still_loads() -> TestResult {
+        let tmp = tempfile::tempdir()?;
         std::fs::write(
             tmp.path().join("meta.toml"),
             r#"
@@ -133,11 +140,11 @@ project_path = "/tmp/x"
 project_hash = "xyz"
 language = "node"
 "#,
-        )
-        .expect("write");
-        let m = Meta::load(tmp.path()).expect("load");
+        )?;
+        let m = Meta::load(tmp.path())?;
         assert_eq!(m.language, "node");
         assert!(m.created_at.is_none());
         assert!(m.named_volumes.is_empty());
+        Ok(())
     }
 }

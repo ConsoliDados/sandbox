@@ -1,5 +1,9 @@
 use clap::{Parser, Subcommand};
 
+mod error;
+
+use error::{Error, Result};
+
 #[derive(Parser, Debug)]
 #[command(
     name = "sandbox",
@@ -83,7 +87,14 @@ enum NetOp {
     Status { project: String },
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() {
+    if let Err(err) = run() {
+        eprintln!("error: {err}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<()> {
     let cli = Cli::parse();
     init_logging(cli.verbose, cli.quiet);
 
@@ -94,11 +105,9 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Some(cmd) => {
-            // Phase 0: stub — no command bodies yet. See docs/roadmap.md.
+            // Phase 0: stub — no command bodies yet. See docs/sandbox/roadmap.md.
             tracing::info!(?cmd, "command parsed (Phase 0 stub — not implemented)");
-            anyhow::bail!(
-                "this command is not implemented yet (Phase 0 skeleton). See docs/roadmap.md"
-            );
+            Err(Error::NotImplemented)
         }
     }
 }

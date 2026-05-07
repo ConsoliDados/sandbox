@@ -2,10 +2,6 @@
 //!
 //! See `crates/sandbox-core/AGENTS.md` for boundaries and conventions.
 
-// Tests use `expect()` / `unwrap()` to fail fast on infrastructure setup
-// (tempdir creation, fixture writes). Lints are kept strict for non-test code.
-#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
-
 pub mod config;
 pub mod error;
 pub mod hash;

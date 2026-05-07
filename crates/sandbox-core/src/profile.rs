@@ -129,23 +129,25 @@ mod tests {
     }
 
     #[test]
-    fn deserializes_with_unsafe_keyword() {
+    fn deserializes_with_unsafe_keyword() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let toml_in = r#"
 name = "test"
 unsafe = true
 network = true
 "#;
-        let p: Profile = toml::from_str(toml_in).expect("parse");
+        let p: Profile = toml::from_str(toml_in)?;
         assert!(p.unsafe_mode);
         assert!(p.network);
+        Ok(())
     }
 
     #[test]
-    fn round_trip_keeps_unsafe_field_name() {
+    fn round_trip_keeps_unsafe_field_name() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let p = Profile::unsafe_profile();
-        let s = toml::to_string(&p).expect("serialize");
+        let s = toml::to_string(&p)?;
         assert!(s.contains("unsafe = true"));
-        let back: Profile = toml::from_str(&s).expect("parse");
+        let back: Profile = toml::from_str(&s)?;
         assert_eq!(back.unsafe_mode, p.unsafe_mode);
+        Ok(())
     }
 }

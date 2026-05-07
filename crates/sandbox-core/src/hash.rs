@@ -63,49 +63,56 @@ pub fn project_hash(path: &Path) -> Result<ProjectHash> {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn hash_is_deterministic() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let h1 = project_hash(tmp.path()).expect("hash");
-        let h2 = project_hash(tmp.path()).expect("hash");
+    fn hash_is_deterministic() -> TestResult {
+        let tmp = tempfile::tempdir()?;
+        let h1 = project_hash(tmp.path())?;
+        let h2 = project_hash(tmp.path())?;
         assert_eq!(h1, h2);
+        Ok(())
     }
 
     #[test]
-    fn hash_differs_for_different_paths() {
-        let a = tempfile::tempdir().expect("tempdir a");
-        let b = tempfile::tempdir().expect("tempdir b");
-        let ha = project_hash(a.path()).expect("hash a");
-        let hb = project_hash(b.path()).expect("hash b");
+    fn hash_differs_for_different_paths() -> TestResult {
+        let a = tempfile::tempdir()?;
+        let b = tempfile::tempdir()?;
+        let ha = project_hash(a.path())?;
+        let hb = project_hash(b.path())?;
         assert_ne!(ha, hb);
+        Ok(())
     }
 
     #[test]
-    fn hash_resolves_symlinks() {
-        let tmp = tempfile::tempdir().expect("tempdir");
+    fn hash_resolves_symlinks() -> TestResult {
+        let tmp = tempfile::tempdir()?;
         let target = tmp.path().join("target");
-        std::fs::create_dir(&target).expect("mkdir");
+        std::fs::create_dir(&target)?;
         let link = tmp.path().join("link");
-        std::os::unix::fs::symlink(&target, &link).expect("symlink");
+        std::os::unix::fs::symlink(&target, &link)?;
 
-        let ht = project_hash(&target).expect("hash target");
-        let hl = project_hash(&link).expect("hash link");
+        let ht = project_hash(&target)?;
+        let hl = project_hash(&link)?;
         assert_eq!(ht, hl, "symlink and target should hash equal");
+        Ok(())
     }
 
     #[test]
-    fn short_is_12_hex_chars() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let h = project_hash(tmp.path()).expect("hash");
+    fn short_is_12_hex_chars() -> TestResult {
+        let tmp = tempfile::tempdir()?;
+        let h = project_hash(tmp.path())?;
         let short = h.short();
         assert_eq!(short.len(), 12);
         assert!(short.chars().all(|c| c.is_ascii_hexdigit()));
+        Ok(())
     }
 
     #[test]
-    fn rejects_non_directory() {
-        let tmp = tempfile::NamedTempFile::new().expect("tempfile");
-        let err = project_hash(tmp.path()).expect_err("should reject file");
-        assert!(matches!(err, Error::ProjectPathInvalid(_)));
+    fn rejects_non_directory() -> TestResult {
+        let tmp = tempfile::NamedTempFile::new()?;
+        let result = project_hash(tmp.path());
+        assert!(matches!(result, Err(Error::ProjectPathInvalid(_))));
+        Ok(())
     }
 }

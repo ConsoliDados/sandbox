@@ -92,18 +92,21 @@ impl Paths {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn ensure_dirs_creates_all_three() {
-        let tmp = tempfile::tempdir().expect("tempdir");
+    fn ensure_dirs_creates_all_three() -> TestResult {
+        let tmp = tempfile::tempdir()?;
         let paths = Paths::from_roots(
             tmp.path().join("config"),
             tmp.path().join("data"),
             tmp.path().join("cache"),
         );
-        paths.ensure_dirs().expect("ensure_dirs");
+        paths.ensure_dirs()?;
         assert!(paths.config().is_dir());
         assert!(paths.data().is_dir());
         assert!(paths.cache().is_dir());
+        Ok(())
     }
 
     #[test]

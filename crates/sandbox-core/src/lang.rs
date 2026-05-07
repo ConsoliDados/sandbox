@@ -214,62 +214,69 @@ impl LanguageRegistry {
 mod tests {
     use super::*;
 
-    fn write(dir: &Path, name: &str) {
-        std::fs::write(dir.join(name), b"").expect("write fixture");
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
+    fn touch(dir: &Path, name: &str) -> std::io::Result<()> {
+        std::fs::write(dir.join(name), b"")
     }
 
     #[test]
-    fn builtin_loads_three_manifests() {
-        let reg = LanguageRegistry::builtin().expect("builtin");
+    fn builtin_loads_three_manifests() -> TestResult {
+        let reg = LanguageRegistry::builtin()?;
         let names: Vec<&str> = reg.all().iter().map(|m| m.name.as_str()).collect();
         assert!(names.contains(&"node"));
         assert!(names.contains(&"bun"));
         assert!(names.contains(&"rust"));
+        Ok(())
     }
 
     #[test]
-    fn detect_picks_rust_over_node_via_priority() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        write(tmp.path(), "package.json");
-        write(tmp.path(), "Cargo.toml");
+    fn detect_picks_rust_over_node_via_priority() -> TestResult {
+        let tmp = tempfile::tempdir()?;
+        touch(tmp.path(), "package.json")?;
+        touch(tmp.path(), "Cargo.toml")?;
 
-        let reg = LanguageRegistry::builtin().expect("builtin");
-        let m = reg.detect(tmp.path()).expect("detect");
+        let reg = LanguageRegistry::builtin()?;
+        let m = reg.detect(tmp.path())?;
         assert_eq!(m.name, "rust");
+        Ok(())
     }
 
     #[test]
-    fn detect_picks_bun_over_node_via_priority() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        write(tmp.path(), "package.json");
-        write(tmp.path(), "bun.lock");
+    fn detect_picks_bun_over_node_via_priority() -> TestResult {
+        let tmp = tempfile::tempdir()?;
+        touch(tmp.path(), "package.json")?;
+        touch(tmp.path(), "bun.lock")?;
 
-        let reg = LanguageRegistry::builtin().expect("builtin");
-        let m = reg.detect(tmp.path()).expect("detect");
+        let reg = LanguageRegistry::builtin()?;
+        let m = reg.detect(tmp.path())?;
         assert_eq!(m.name, "bun");
+        Ok(())
     }
 
     #[test]
-    fn detect_returns_node_when_only_package_json() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        write(tmp.path(), "package.json");
+    fn detect_returns_node_when_only_package_json() -> TestResult {
+        let tmp = tempfile::tempdir()?;
+        touch(tmp.path(), "package.json")?;
 
-        let reg = LanguageRegistry::builtin().expect("builtin");
-        let m = reg.detect(tmp.path()).expect("detect");
+        let reg = LanguageRegistry::builtin()?;
+        let m = reg.detect(tmp.path())?;
         assert_eq!(m.name, "node");
+        Ok(())
     }
 
     #[test]
-    fn detect_errors_when_no_match() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let reg = LanguageRegistry::builtin().expect("builtin");
-        let err = reg.detect(tmp.path()).expect_err("should not detect");
-        assert!(matches!(err, Error::LanguageNotDetected(_)));
+    fn detect_errors_when_no_match() -> TestResult {
+        let tmp = tempfile::tempdir()?;
+        let reg = LanguageRegistry::builtin()?;
+        let result = reg.detect(tmp.path());
+        assert!(matches!(result, Err(Error::LanguageNotDetected(_))));
+        Ok(())
     }
 
     #[test]
-    fn user_dir_overrides_builtin_by_name() {
-        let tmp = tempfile::tempdir().expect("tempdir");
+    fn user_dir_overrides_builtin_by_name() -> TestResult {
+        let tmp = tempfile::tempdir()?;
         let user_manifest = r#"
 name = "node"
 display_name = "Node (user override)"
@@ -277,23 +284,25 @@ image = "node:99"
 detect = ["package.json"]
 priority = 999
 "#;
-        std::fs::write(tmp.path().join("node.toml"), user_manifest).expect("write");
+        std::fs::write(tmp.path().join("node.toml"), user_manifest)?;
 
-        let mut reg = LanguageRegistry::builtin().expect("builtin");
-        reg.load_from_dir(tmp.path()).expect("load");
+        let mut reg = LanguageRegistry::builtin()?;
+        reg.load_from_dir(tmp.path())?;
 
-        let node = reg.require("node").expect("node present");
+        let node = reg.require("node")?;
         assert_eq!(node.image, "node:99");
         assert_eq!(node.priority, 999);
+        Ok(())
     }
 
     #[test]
-    fn load_from_missing_dir_is_noop() {
-        let tmp = tempfile::tempdir().expect("tempdir");
+    fn load_from_missing_dir_is_noop() -> TestResult {
+        let tmp = tempfile::tempdir()?;
         let missing = tmp.path().join("does-not-exist");
         let mut reg = LanguageRegistry::default();
-        reg.load_from_dir(&missing).expect("noop");
+        reg.load_from_dir(&missing)?;
         assert!(reg.all().is_empty());
+        Ok(())
     }
 
     #[test]

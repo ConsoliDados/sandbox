@@ -16,7 +16,7 @@ sandbox-docker.workspace = true
 sandbox-scan.workspace = true
 sandbox-proxy.workspace = true
 
-anyhow.workspace = true
+thiserror.workspace = true
 clap.workspace = true
 tokio.workspace = true
 tracing.workspace = true

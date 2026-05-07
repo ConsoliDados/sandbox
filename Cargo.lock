@@ -507,12 +507,12 @@ dependencies = [
 name = "sandbox-cli"
 version = "0.0.1"
 dependencies = [
- "anyhow",
  "clap",
  "sandbox-core",
  "sandbox-docker",
  "sandbox-proxy",
  "sandbox-scan",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
  "tracing-subscriber",

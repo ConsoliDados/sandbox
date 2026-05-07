@@ -168,21 +168,24 @@ impl Config {
 mod tests {
     use super::*;
 
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     #[test]
-    fn missing_file_returns_defaults() {
-        let tmp = tempfile::tempdir().expect("tempdir");
+    fn missing_file_returns_defaults() -> TestResult {
+        let tmp = tempfile::tempdir()?;
         let missing = tmp.path().join("does-not-exist.toml");
-        let cfg = Config::load_or_default(&missing).expect("load");
+        let cfg = Config::load_or_default(&missing)?;
         assert_eq!(cfg.defaults.shell, "zsh");
         assert_eq!(cfg.defaults.profile, "default");
         assert!(cfg.profile.contains_key("default"));
         assert!(cfg.profile.contains_key("unsafe"));
         assert!(cfg.profile.contains_key("paranoid"));
+        Ok(())
     }
 
     #[test]
-    fn user_values_override_builtin() {
-        let tmp = tempfile::tempdir().expect("tempdir");
+    fn user_values_override_builtin() -> TestResult {
+        let tmp = tempfile::tempdir()?;
         let path = tmp.path().join("config.toml");
         std::fs::write(
             &path,
@@ -210,37 +213,38 @@ cpu = 8.0
 memory_mb = 16384
 no_compose_deps = false
 "#,
-        )
-        .expect("write");
+        )?;
 
-        let cfg = Config::load_or_default(&path).expect("load");
+        let cfg = Config::load_or_default(&path)?;
         assert_eq!(cfg.defaults.shell, "bash");
         assert_eq!(cfg.defaults.profile, "paranoid");
         assert!(!cfg.scan.cache);
         assert_eq!(cfg.scan.severity_threshold, "high");
         assert_eq!(cfg.proxy.domain, "dev.test");
 
-        let default_profile = cfg.profile("default").expect("default present");
+        let default_profile = cfg.profile("default")?;
         assert_eq!(default_profile.cpu, Some(8.0));
         assert_eq!(default_profile.memory_mb, Some(16384));
         // Builtin profiles still injected for the others
         assert!(cfg.profile.contains_key("unsafe"));
         assert!(cfg.profile.contains_key("paranoid"));
+        Ok(())
     }
 
     #[test]
     fn missing_profile_yields_typed_error() {
         let cfg = Config::default();
-        let err = cfg.profile("nope").expect_err("should fail");
-        assert!(matches!(err, Error::ProfileNotFound(_)));
+        let result = cfg.profile("nope");
+        assert!(matches!(result, Err(Error::ProfileNotFound(_))));
     }
 
     #[test]
-    fn invalid_toml_surfaces_invalid_manifest() {
-        let tmp = tempfile::tempdir().expect("tempdir");
+    fn invalid_toml_surfaces_invalid_manifest() -> TestResult {
+        let tmp = tempfile::tempdir()?;
         let path = tmp.path().join("config.toml");
-        std::fs::write(&path, "not = valid = toml").expect("write");
-        let err = Config::load_or_default(&path).expect_err("should fail");
-        assert!(matches!(err, Error::InvalidManifest { .. }));
+        std::fs::write(&path, "not = valid = toml")?;
+        let result = Config::load_or_default(&path);
+        assert!(matches!(result, Err(Error::InvalidManifest { .. })));
+        Ok(())
     }
 }

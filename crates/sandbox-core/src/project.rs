@@ -116,8 +116,10 @@ impl Project {
 mod tests {
     use super::*;
 
-    fn touch(dir: &Path, name: &str) {
-        std::fs::write(dir.join(name), b"").expect("write fixture");
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
+    fn touch(dir: &Path, name: &str) -> std::io::Result<()> {
+        std::fs::write(dir.join(name), b"")
     }
 
     #[test]
@@ -138,50 +140,55 @@ mod tests {
     }
 
     #[test]
-    fn resolve_picks_language_via_detect() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        touch(tmp.path(), "Cargo.toml");
-        let reg = LanguageRegistry::builtin().expect("builtin");
-        let p = Project::resolve(tmp.path(), &reg, None).expect("resolve");
+    fn resolve_picks_language_via_detect() -> TestResult {
+        let tmp = tempfile::tempdir()?;
+        touch(tmp.path(), "Cargo.toml")?;
+        let reg = LanguageRegistry::builtin()?;
+        let p = Project::resolve(tmp.path(), &reg, None)?;
         assert_eq!(p.language.as_str(), "rust");
         assert!(p.package_dirs.iter().any(|d| d == "target"));
         assert_eq!(p.named_volumes().len(), p.package_dirs.len());
+        Ok(())
     }
 
     #[test]
-    fn resolve_honors_lang_override() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        touch(tmp.path(), "Cargo.toml");
-        let reg = LanguageRegistry::builtin().expect("builtin");
-        let p = Project::resolve(tmp.path(), &reg, Some("node")).expect("resolve");
+    fn resolve_honors_lang_override() -> TestResult {
+        let tmp = tempfile::tempdir()?;
+        touch(tmp.path(), "Cargo.toml")?;
+        let reg = LanguageRegistry::builtin()?;
+        let p = Project::resolve(tmp.path(), &reg, Some("node"))?;
         assert_eq!(p.language.as_str(), "node");
+        Ok(())
     }
 
     #[test]
-    fn resolve_rejects_nonexistent_path() {
-        let tmp = tempfile::tempdir().expect("tempdir");
+    fn resolve_rejects_nonexistent_path() -> TestResult {
+        let tmp = tempfile::tempdir()?;
         let nope = tmp.path().join("does-not-exist");
-        let reg = LanguageRegistry::builtin().expect("builtin");
-        let err = Project::resolve(&nope, &reg, None).expect_err("should fail");
-        assert!(matches!(err, Error::Io { .. }));
+        let reg = LanguageRegistry::builtin()?;
+        let result = Project::resolve(&nope, &reg, None);
+        assert!(matches!(result, Err(Error::Io { .. })));
+        Ok(())
     }
 
     #[test]
-    fn resolve_rejects_unknown_lang_override() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        touch(tmp.path(), "Cargo.toml");
-        let reg = LanguageRegistry::builtin().expect("builtin");
-        let err = Project::resolve(tmp.path(), &reg, Some("clojure")).expect_err("should fail");
-        assert!(matches!(err, Error::LanguageNotFound(_)));
+    fn resolve_rejects_unknown_lang_override() -> TestResult {
+        let tmp = tempfile::tempdir()?;
+        touch(tmp.path(), "Cargo.toml")?;
+        let reg = LanguageRegistry::builtin()?;
+        let result = Project::resolve(tmp.path(), &reg, Some("clojure"));
+        assert!(matches!(result, Err(Error::LanguageNotFound(_))));
+        Ok(())
     }
 
     #[test]
-    fn container_name_stable_across_resolves() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        touch(tmp.path(), "Cargo.toml");
-        let reg = LanguageRegistry::builtin().expect("builtin");
-        let p1 = Project::resolve(tmp.path(), &reg, None).expect("resolve");
-        let p2 = Project::resolve(tmp.path(), &reg, None).expect("resolve");
+    fn container_name_stable_across_resolves() -> TestResult {
+        let tmp = tempfile::tempdir()?;
+        touch(tmp.path(), "Cargo.toml")?;
+        let reg = LanguageRegistry::builtin()?;
+        let p1 = Project::resolve(tmp.path(), &reg, None)?;
+        let p2 = Project::resolve(tmp.path(), &reg, None)?;
         assert_eq!(p1.container_name, p2.container_name);
+        Ok(())
     }
 }
