@@ -36,9 +36,9 @@ Branch: `feat/lifecycle-mvp`.
 - [x] ADR-0009 (container reuse semantics) accepted
 - [x] OQ-004 (UID strategy) resolved → numeric `--user $(id -u):$(id -g)`
 - [x] OQ-005 (multi-match priority) resolved → `priority` field, ties on detect-count, error otherwise
-- [ ] `sandbox-core::paths` (XDG resolution)
-- [ ] `sandbox-core::lang` (LangManifest loader + detector)
-- [ ] `sandbox-core::hash` (`git ls-files` based, walkdir fallback)
+- [x] `sandbox-core::paths` (XDG resolution) — `c8ec734`
+- [x] `sandbox-core::lang` (LangManifest loader + detector) — `c8ec734`
+- [x] `sandbox-core::hash` (canonical-path based, see ADR-0009) — `c8ec734`
 - [ ] `sandbox-core::profile` + `config` (load `~/.config/sandbox/config.toml`)
 - [ ] `sandbox-core::project` (`Project` resolution + container_name)
 - [ ] `sandbox-core::state` (per-project state at `$XDG_DATA_HOME/sandbox/containers/<hash>/`)
