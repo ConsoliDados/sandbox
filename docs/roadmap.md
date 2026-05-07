@@ -39,9 +39,9 @@ Branch: `feat/lifecycle-mvp`.
 - [x] `sandbox-core::paths` (XDG resolution) — `c8ec734`
 - [x] `sandbox-core::lang` (LangManifest loader + detector) — `c8ec734`
 - [x] `sandbox-core::hash` (canonical-path based, see ADR-0009) — `c8ec734`
-- [ ] `sandbox-core::profile` + `config` (load `~/.config/sandbox/config.toml`)
-- [ ] `sandbox-core::project` (`Project` resolution + container_name)
-- [ ] `sandbox-core::state` (per-project state at `$XDG_DATA_HOME/sandbox/containers/<hash>/`)
+- [x] `sandbox-core::profile` + `config` (load `~/.config/sandbox/config.toml`) — `6ccd08b`
+- [x] `sandbox-core::project` (`Project` resolution + container_name) — `6ccd08b`
+- [x] `sandbox-core::state` (per-project state at `$XDG_DATA_HOME/sandbox/containers/<hash>/`) — `6ccd08b`
 - [ ] `sandbox-docker::Plan` (pure data describing a `docker run`)
 - [ ] `sandbox-docker::run/start/exec/stop/rm`
 - [ ] `sandbox-docker::volume::ensure` (named volumes)
