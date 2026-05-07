@@ -23,6 +23,7 @@ ADRs capture decisions that have lasting structural consequences. They are short
 | 0008 | Scan pipeline: YARA → heuristics → (deferred) LLM | Draft | Phase 4 |
 | 0009 | Container reuse semantics for `run` / `down` / `nuke` | Accepted | Phase 1 |
 | 0010 | Project compose deps: detect, validate, integrate as sibling network | Draft | Phase 6 |
+| 0011 | Typed errors throughout (no anyhow) | Accepted | Phase 1 |
 
 ## Template
 

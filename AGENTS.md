@@ -48,7 +48,7 @@ In order:
 
 Full text in [`docs/sandbox/playbook.md`](docs/sandbox/playbook.md). Highlights:
 
-- **Errors:** `thiserror` for library crates (typed enums), `anyhow` only at the CLI boundary. No `unwrap()`, no `expect()`, no `panic!()` outside tests. Lints enforce.
+- **Errors:** `thiserror` everywhere — library crates **and** the CLI binary. No `anyhow` (ADR-0011). No `unwrap()` / `expect()` / `panic!()` in non-test code; tests return `Result<(), Box<dyn Error>>` and use `?`. Lints enforce.
 - **`unsafe` is forbidden** at workspace level.
 - **File size:** soft 300 LOC, hard 500. If a file grows past, split.
 - **Function size:** soft 50 LOC, hard 100.
