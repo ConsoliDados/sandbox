@@ -91,7 +91,7 @@ test(scan): add fixtures for compose validation
 chore: bump tokio to 1.x
 ```
 
-Squash merge feature branches into `main`. `main` always builds.
+Git Flow: `feat/*` branches off `dev`, squash-merge back into `dev`. Release branches off `dev`, merge into `main` (which is tagged) and back into `dev`. `main` always builds.
 
 ## 9. ADRs
 

@@ -55,7 +55,7 @@ Full text in [`docs/playbook.md`](docs/playbook.md). Highlights:
 - **Comments:** WHY only. Names carry the WHAT.
 - **Doc comments (`///`):** required on every public item in `sandbox-core`. Optional in adapters but encouraged for non-trivial APIs.
 - **Commits:** Conventional Commits. `feat(scan): ...`, `fix(docker): ...`, `docs(adr): ...`. Use the affected crate name as scope.
-- **Branches:** Git Flow lite. `main` always builds. Feature branches off `main`, squash merge.
+- **Branches:** Git Flow. `main` is release-tagged and always builds; `dev` is the integration branch; `feat/*` branches off `dev` and merges back via squash.
 
 ## Things to NOT do
 
