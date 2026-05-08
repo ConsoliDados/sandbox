@@ -4,13 +4,13 @@ Source of truth for "what's done, what's next, where are we." A fresh session sh
 
 ## Current status
 
-**Phase 1 — lifecycle MVP.** Started 2026-05-06; design alignment + implementation finished 2026-05-07.
+**Phase 2 — volume strategy + network isolation.** Closed 2026-05-08. ADR-0003 and ADR-0004 are Accepted; lockfile mounts land in safe/paranoid as state-dir RW file binds.
 
 `sandbox run/down/nuke .` is wired end-to-end against a real Docker daemon.
 `--print-cmd` shows the rendered `docker run` invocation. `--unsafe` and
 `--network` toggle the source-mount RO/RW and the network namespace.
-49 tests pass headlessly; integration tests that drive Docker for real are
-behind the `docker-tests` feature.
+51 tests pass headlessly (39 core + 7 docker + 5 cli integration); tests that
+drive Docker for real are behind the `docker-tests` feature.
 
 ## Phases
 
@@ -58,14 +58,15 @@ Branch: `feat/lifecycle-mvp`.
 
 ### Phase 2 — Volume strategy + network isolation
 
-- [ ] Project mount as `:ro` in default mode
-- [ ] Named volumes for each `package_dir` from manifest
-- [ ] `sandbox-internal` network (created on first run)
-- [ ] `--unsafe`, `--network`, `--profile` flags
-- [ ] Profiles loaded from `~/.config/sandbox/config.toml`
-- [ ] ADR-0003 (volume strategy) finalized
-- [ ] ADR-0004 (network isolation) finalized
-- [ ] ADR-0007 (state storage XDG) finalized
+- [x] Project mount as `:ro` in default mode
+- [x] Named volumes for each `package_dir` from manifest
+- [x] Lockfile mounts: state-dir bind RW in safe/paranoid (per ADR-0003)
+- [x] `sandbox-internal` network (created on first run)
+- [x] `--unsafe`, `--network`, `--profile` flags
+- [x] Profiles loaded from `~/.config/sandbox/config.toml`
+- [x] ADR-0003 (volume strategy) finalized
+- [x] ADR-0004 (network isolation) finalized
+- [x] ADR-0007 (state storage XDG) finalized
 
 ### Phase 3 — Lifecycle observability
 
