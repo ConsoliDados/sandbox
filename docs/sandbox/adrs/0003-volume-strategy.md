@@ -1,7 +1,7 @@
 # ADR-0003 — Volume strategy: source, package dirs, and lockfiles per profile
 
-- **Status:** Draft
-- **Date:** 2026-05-07
+- **Status:** Accepted
+- **Date:** 2026-05-08
 - **Phase:** 2
 
 ## Context
@@ -22,17 +22,30 @@ The defaults must serve the **paranoid** scenario (untrusted repo from a recruit
 |---|---|---|---|
 | Source tree (`/app`) | bind mount **read-only** | bind mount **read-only** | bind mount **read-write** |
 | Package dirs | **named volume** per dir | **named volume** per dir | **bind mount RW** under host project |
-| Lockfiles | **named volume** | **named volume** | **bind mount RW** |
+| Lockfiles | **state-dir bind RW (file)** | **state-dir bind RW (file)** | covered by source bind RW |
 
-Naming conventions (consistent with `sandbox-core::project::NamedVolume`):
+Naming conventions for package-dir named volumes (consistent with `sandbox-core::project::NamedVolume`):
 
 ```
 sandbox-<hash[..12]>-<sanitized_relpath>
 ```
 
-For lockfiles, the sanitisation collapses the path to a flat segment (`bun.lockb` → `bun_lockb`).
+Detection lives in the language manifest — `package_dirs` and `lock_files` (TOML arrays). Both are merged from manifest + user config.
 
-Detection lives in the language manifest — `package_dirs` and a new `lock_files` array (TOML). Both are merged from manifest + user config.
+### Lockfile mount mechanics (safe / paranoid)
+
+Named Docker volumes only mount at directory paths, so mounting one over a single file (e.g. `/app/bun.lock`) does not work without an init container or `docker cp` seed step. Instead, lockfiles in `safe`/`paranoid` are bind-mounted as **regular files** from the per-project state dir:
+
+```
+$XDG_DATA_HOME/sandbox/containers/<hash>/lockfiles/<name>   ←→   /app/<name>   (RW)
+```
+
+- On each `run`, before `docker run`/`start`, the seed under `lockfiles/<name>` is created if missing. If the host project has the lockfile, it is copied; otherwise an empty file is touched. The seed is never overwritten on subsequent runs — state-dir is the source of truth in safe/paranoid.
+- The host project tree never sees the modifications (intentional: the threat model T2 requires source RO).
+- Bringing the modified lockfile back to the host (so it can be committed) is deferred to Phase 3 as `sandbox sync-lock` (or equivalent). Until then, users who need the new lockfile in their working tree promote to `unsafe` (where the lockfile is part of the source bind RW) and re-run.
+- `sandbox nuke` removes the entire `containers/<hash>/` subtree, including `lockfiles/`, so promoting a project from `safe` to `unsafe` cleanly is a `nuke` away.
+
+In `unsafe`, no extra mount is added: the `/app` bind is RW and Docker writes pass through to the host file directly.
 
 ## Alternatives considered
 
@@ -40,6 +53,8 @@ Detection lives in the language manifest — `package_dirs` and a new `lock_file
 - **(b) Always bind mount.** Rejected: this is the docker-sandbox v0 behaviour that the threat model exists to prevent (T1, T2). The 2026-05-06 incident would have written to the project tree under that model.
 - **(c) Symlink in the host project pointing at the Docker volume mount.** Rejected: Docker volume contents live under `/var/lib/docker/volumes/<name>/_data`, which requires root to read on Linux. Editors, `git`, and tooling on the host would hit `EACCES` on every operation. The bind mount in `unsafe` delivers the same observable result without the permission friction.
 - **(d) Whitelist specific files (lockfile only) for RW even in safe mode.** Considered: keeps lockfile commitable without losing source RO. Rejected for v0.1: malware could write through the whitelist (e.g. crafted `bun.lockb`-named payload). Revisit if a clean implementation appears.
+- **(e) Named volume per lockfile.** Rejected: Docker mounts named volumes as directories; mapping one over a single file path requires either an init container or a `docker cp` seed step. The state-dir bind achieves the same isolation with simpler mechanics (regular file under our XDG data dir, visible to the user, removed by `sandbox nuke`).
+- **(f) Frozen-lockfile-only (no lockfile mount in safe/paranoid).** Considered: simpler still — the source bind RO already covers the lockfile read-only. Rejected: `bun install` / `npm install` / `cargo build` (without `--frozen-lockfile` / `npm ci` / `--locked`) all attempt to rewrite the lockfile and would fail with `EROFS`. Friction outweighs the marginal simplification, especially since the state-dir bind keeps the threat model intact.
 
 ## Consequences
 
@@ -51,8 +66,8 @@ Positive:
 
 Negative / open:
 
-- **Lockfile commits in safe/paranoid require leaving the named volume.** Today there is no path. This couples to **OQ-002** (git inside read-only `/app`): the resolution there must include either an explicit "promote to unsafe to commit lockfile" step, an `exec git` from inside the container with a writable `.git`, or a one-shot `sandbox sync-lockfiles` command. To be decided when OQ-002 closes.
-- **Switching profiles on the same project** (run safe, then run unsafe) creates two states: the named volume still has a lockfile from safe runs, but unsafe binds the host's (possibly empty) lockfile. Mitigation: on profile change, log a warning + offer `sandbox nuke --keep-state` to clear named volumes. Detail to settle in Phase 2.
+- **Lockfile commits in safe/paranoid require an explicit sync-out step.** The state-dir bind keeps the modified file under `~/.local/share/sandbox/containers/<hash>/lockfiles/<name>`; `git status` on the host shows nothing. A `sandbox sync-lock` (or equivalent) command in Phase 3 will copy the seed file back into the project tree. Until then, `cp` from the state dir or promoting to `--unsafe` are the documented escapes.
+- **Switching profiles on the same project** (run safe, then run unsafe) leaves a stale seed under `lockfiles/`. Unsafe binds the host's (possibly different) lockfile and ignores the seed; Phase 3 sync-out should warn when seed and host disagree. `sandbox nuke` clears the state dir wholesale.
 - **`unsafe` writes to the host source tree.** Documented and intentional: `unsafe` is the "I trust this project" switch, in line with ADR-0009 and the threat model.
 
 ## References
