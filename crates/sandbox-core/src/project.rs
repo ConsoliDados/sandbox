@@ -59,6 +59,7 @@ pub struct Project {
     pub language: LanguageId,
     pub container_name: ContainerName,
     pub package_dirs: Vec<String>,
+    pub lock_files: Vec<String>,
 }
 
 impl Project {
@@ -93,6 +94,7 @@ impl Project {
         let container_name = ContainerName::from_hash(&hash);
         let language = manifest.id();
         let package_dirs = manifest.package_dirs.clone();
+        let lock_files = manifest.lock_files.clone();
 
         Ok(Self {
             path: canonical,
@@ -100,6 +102,7 @@ impl Project {
             language,
             container_name,
             package_dirs,
+            lock_files,
         })
     }
 
@@ -147,6 +150,7 @@ mod tests {
         let p = Project::resolve(tmp.path(), &reg, None)?;
         assert_eq!(p.language.as_str(), "rust");
         assert!(p.package_dirs.iter().any(|d| d == "target"));
+        assert!(p.lock_files.iter().any(|f| f == "Cargo.lock"));
         assert_eq!(p.named_volumes().len(), p.package_dirs.len());
         Ok(())
     }

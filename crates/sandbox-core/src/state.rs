@@ -25,6 +25,12 @@ pub struct Meta {
 
     #[serde(default)]
     pub named_volumes: Vec<String>,
+
+    /// Lockfile names (relative to project workdir) that are bind-mounted from
+    /// `Paths::lockfiles_dir(hash)` in `safe`/`paranoid`. Empty when the project
+    /// last ran under `unsafe` or has no lockfiles. See ADR-0003.
+    #[serde(default)]
+    pub lockfiles: Vec<String>,
 }
 
 impl Meta {
@@ -75,6 +81,7 @@ mod tests {
             created_at: Some("2026-05-06T20:00:00Z".to_string()),
             last_run_at: None,
             named_volumes: vec!["sandbox-abcdef012345-target".to_string()],
+            lockfiles: vec!["Cargo.lock".to_string()],
         }
     }
 
@@ -145,6 +152,7 @@ language = "node"
         assert_eq!(m.language, "node");
         assert!(m.created_at.is_none());
         assert!(m.named_volumes.is_empty());
+        assert!(m.lockfiles.is_empty());
         Ok(())
     }
 }

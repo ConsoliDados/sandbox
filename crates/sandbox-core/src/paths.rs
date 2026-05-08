@@ -79,6 +79,16 @@ impl Paths {
         self.containers_dir().join(hash_short)
     }
 
+    /// Per-project lockfiles directory.
+    ///
+    /// Holds the writable copies of project lockfiles bind-mounted into
+    /// `/app/<lockfile>` in the `safe` and `paranoid` profiles, so package
+    /// managers running inside the sandbox can rewrite them without escaping
+    /// to the host source tree. See ADR-0003.
+    pub fn lockfiles_dir(&self, hash_short: &str) -> PathBuf {
+        self.container_state_dir(hash_short).join("lockfiles")
+    }
+
     pub fn proxy_dir(&self) -> PathBuf {
         self.data.join("proxy")
     }
@@ -121,6 +131,10 @@ mod tests {
         assert_eq!(
             paths.container_state_dir("abc123"),
             PathBuf::from("/d/containers/abc123")
+        );
+        assert_eq!(
+            paths.lockfiles_dir("abc123"),
+            PathBuf::from("/d/containers/abc123/lockfiles")
         );
         assert_eq!(paths.scan_cache_dir(), PathBuf::from("/k/scan"));
     }
