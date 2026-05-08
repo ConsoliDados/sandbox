@@ -86,6 +86,56 @@ fn print_cmd_unsafe_relaxes_source_and_network() -> TestResult {
 }
 
 #[test]
+fn print_cmd_safe_mounts_lockfiles_from_state_dir() -> TestResult {
+    let tmp = tempfile::tempdir()?;
+    make_node_project(tmp.path())?;
+
+    let out = Command::new(binary())
+        .arg("--print-cmd")
+        .args(["run", tmp.path().to_str().unwrap_or(".")])
+        .output()?;
+    assert!(out.status.success());
+
+    let stdout = String::from_utf8(out.stdout)?;
+    // Each declared lockfile in node.toml is bind-mounted RW from the
+    // per-project state dir, regardless of host presence (ADR-0003).
+    for name in ["package-lock.json", "pnpm-lock.yaml", "yarn.lock"] {
+        let needle = format!("/lockfiles/{name}:/app/{name}");
+        assert!(
+            stdout.contains(&needle),
+            "expected lockfile bind {needle} in: {stdout}"
+        );
+        let ro_needle = format!("/lockfiles/{name}:/app/{name}:ro");
+        assert!(
+            !stdout.contains(&ro_needle),
+            "lockfile mount must be RW: {stdout}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn print_cmd_unsafe_skips_lockfile_state_mounts() -> TestResult {
+    let tmp = tempfile::tempdir()?;
+    make_node_project(tmp.path())?;
+
+    let out = Command::new(binary())
+        .arg("--print-cmd")
+        .args(["run", tmp.path().to_str().unwrap_or("."), "--unsafe"])
+        .output()?;
+    assert!(out.status.success());
+
+    let stdout = String::from_utf8(out.stdout)?;
+    // In --unsafe the source bind is RW, so lockfile changes go straight
+    // to the host project tree. No state-dir bind needed.
+    assert!(
+        !stdout.contains("/lockfiles/"),
+        "no lockfile state mount under --unsafe: {stdout}"
+    );
+    Ok(())
+}
+
+#[test]
 fn print_cmd_network_keeps_source_ro() -> TestResult {
     let tmp = tempfile::tempdir()?;
     make_node_project(tmp.path())?;

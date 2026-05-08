@@ -41,6 +41,7 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
     for vol in ctx.project.named_volumes() {
         sandbox_docker::ensure_volume(vol.as_str()).await?;
     }
+    seed_lockfiles(&ctx)?;
 
     attach_or_run(&ctx, &plan).await?;
     save_state(&ctx)?;
@@ -54,6 +55,9 @@ struct Context {
     profile: Profile,
     user: UserSpec,
     dotfiles: Dotfiles,
+    /// (lockfile basename, host seed path). Empty when `unsafe_mode` is on or
+    /// the manifest declares no lockfiles. See ADR-0003.
+    lockfile_seeds: Vec<(String, PathBuf)>,
 }
 
 impl Context {
@@ -86,6 +90,7 @@ impl Context {
 
         let user = UserSpec::current()?;
         let dotfiles = dotfiles::discover(&paths);
+        let lockfile_seeds = lockfile_seed_paths(&paths, &project, &profile);
         Ok(Self {
             paths,
             project,
@@ -93,8 +98,56 @@ impl Context {
             profile,
             user,
             dotfiles,
+            lockfile_seeds,
         })
     }
+}
+
+/// Compute the (name, host_path) pairs for lockfile bind mounts.
+///
+/// In `unsafe_mode` we do not isolate lockfiles: the source bind is RW and any
+/// changes flow straight to the host project tree. In `safe`/`paranoid` each
+/// declared lockfile is mapped to a writable file under the per-project state
+/// dir, which we'll bind on top of `/app/<name>`.
+fn lockfile_seed_paths(
+    paths: &Paths,
+    project: &Project,
+    profile: &Profile,
+) -> Vec<(String, PathBuf)> {
+    if profile.unsafe_mode {
+        return Vec::new();
+    }
+    let dir = paths.lockfiles_dir(&project.hash.short());
+    project
+        .lock_files
+        .iter()
+        .map(|name| (name.clone(), dir.join(name)))
+        .collect()
+}
+
+/// Create the lockfiles seed dir and ensure each declared lockfile exists on
+/// the host as a regular file (so Docker performs a file bind, not a directory
+/// bind). On first sight we copy the project's current lockfile if present;
+/// otherwise we touch an empty file. We never overwrite an existing seed —
+/// state-dir is the source of truth in `safe`/`paranoid`.
+fn seed_lockfiles(ctx: &Context) -> Result<()> {
+    if ctx.lockfile_seeds.is_empty() {
+        return Ok(());
+    }
+    let dir = ctx.paths.lockfiles_dir(&ctx.project.hash.short());
+    std::fs::create_dir_all(&dir)?;
+    for (name, seed) in &ctx.lockfile_seeds {
+        if seed.exists() {
+            continue;
+        }
+        let host_source = ctx.project.path.join(name);
+        if host_source.is_file() {
+            std::fs::copy(&host_source, seed)?;
+        } else {
+            std::fs::File::create(seed)?;
+        }
+    }
+    Ok(())
 }
 
 fn build_plan(ctx: &Context) -> Plan {
@@ -146,6 +199,14 @@ fn build_mounts(ctx: &Context) -> Vec<Mount> {
         mounts.push(Mount::Volume {
             name: volume.as_str().to_string(),
             dst: format!("{workdir}/{dir}"),
+            read_only: false,
+        });
+    }
+
+    for (name, seed) in &ctx.lockfile_seeds {
+        mounts.push(Mount::Bind {
+            src: seed.clone(),
+            dst: format!("{workdir}/{name}"),
             read_only: false,
         });
     }
@@ -236,6 +297,11 @@ fn save_state(ctx: &Context) -> Result<()> {
             .named_volumes()
             .iter()
             .map(|v| v.as_str().to_string())
+            .collect(),
+        lockfiles: ctx
+            .lockfile_seeds
+            .iter()
+            .map(|(name, _)| name.clone())
             .collect(),
     };
     meta.save(&state_dir)?;
