@@ -17,7 +17,7 @@ ADRs capture decisions that have lasting structural consequences. They are short
 | 0002 | Docker integration via shell-out instead of bollard | Accepted | Phase 1 |
 | 0003 | Volume strategy: read-only source + named volumes for package dirs | Draft | Phase 2 |
 | 0004 | Network isolation by default (`sandbox-internal`); runtime toggle | Draft | Phase 2 |
-| 0005 | Reverse proxy via Traefik sidecar | Draft | Phase 5 |
+| 0005 | Reverse proxy via Traefik sidecar | Accepted | Phase 5 |
 | 0006 | Language manifests as TOML (with future YAML opt-in) | Accepted | Phase 1 |
 | 0007 | State storage follows XDG Base Directory spec | Accepted | Phase 1 |
 | 0008 | Scan pipeline: YARA → heuristics → (deferred) LLM | Draft | Phase 4 |
