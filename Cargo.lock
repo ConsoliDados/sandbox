@@ -508,10 +508,12 @@ name = "sandbox-cli"
 version = "0.0.1"
 dependencies = [
  "clap",
+ "directories",
  "sandbox-core",
  "sandbox-docker",
  "sandbox-proxy",
  "sandbox-scan",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tracing",

@@ -1,5 +1,6 @@
 use clap::{Parser, Subcommand};
 
+mod commands;
 mod error;
 
 use error::{Error, Result};
@@ -23,11 +24,11 @@ struct Cli {
     #[arg(short, long, global = true)]
     quiet: bool,
 
-    /// Print the underlying docker commands instead of running them
+    /// Print the underlying docker command instead of running it
     #[arg(long, global = true)]
     print_cmd: bool,
 
-    /// Override config file location
+    /// Override config file location (not yet wired)
     #[arg(long, global = true, value_name = "PATH")]
     config: Option<std::path::PathBuf>,
 }
@@ -39,6 +40,22 @@ enum Command {
         /// Project path (defaults to current directory)
         #[arg(default_value = ".")]
         path: std::path::PathBuf,
+
+        /// Force a language (default: auto-detect)
+        #[arg(long)]
+        lang: Option<String>,
+
+        /// Use a named profile from config (default: from config)
+        #[arg(long)]
+        profile: Option<String>,
+
+        /// Disable paranoid defaults: r/w volume, full network, skip scan
+        #[arg(long = "unsafe")]
+        unsafe_mode: bool,
+
+        /// Allow internet egress
+        #[arg(long)]
+        network: bool,
     },
     /// Stop a sandbox container; keep state
     Down {
@@ -51,32 +68,38 @@ enum Command {
         project: Option<String>,
         #[arg(long)]
         all: bool,
+        /// Remove container only; keep named volumes
+        #[arg(long)]
+        keep_volumes: bool,
+        /// Keep state directory
+        #[arg(long)]
+        keep_state: bool,
     },
-    /// List sandbox containers
+    /// List sandbox containers (Phase 3)
     Ps,
-    /// Tail sandbox container logs
+    /// Tail sandbox container logs (Phase 3)
     Logs { project: String },
-    /// Run a command inside a running sandbox
+    /// Run a command inside a running sandbox (Phase 3)
     Exec {
         project: String,
         #[arg(last = true)]
         cmd: Vec<String>,
     },
-    /// Toggle internet egress at runtime
+    /// Toggle internet egress at runtime (Phase 6)
     Net {
         #[command(subcommand)]
         op: NetOp,
     },
-    /// Run security scan without launching a container
+    /// Run security scan without launching a container (Phase 4)
     Scan {
         #[arg(default_value = ".")]
         path: std::path::PathBuf,
     },
-    /// Manage language manifests
+    /// Manage language manifests (Phase 3)
     Lang,
-    /// Control reverse proxy sidecar
+    /// Control reverse proxy sidecar (Phase 5)
     Proxy,
-    /// Edit or show config
+    /// Edit or show config (Phase 3)
     Config,
 }
 
@@ -98,15 +121,55 @@ fn run() -> Result<()> {
     let cli = Cli::parse();
     init_logging(cli.verbose, cli.quiet);
 
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    runtime.block_on(dispatch(cli))
+}
+
+async fn dispatch(cli: Cli) -> Result<()> {
     match cli.command {
         None => {
             <Cli as clap::CommandFactory>::command().print_help()?;
             println!();
             Ok(())
         }
-        Some(cmd) => {
-            // Phase 0: stub — no command bodies yet. See docs/sandbox/roadmap.md.
-            tracing::info!(?cmd, "command parsed (Phase 0 stub — not implemented)");
+        Some(Command::Run {
+            path,
+            lang,
+            profile,
+            unsafe_mode,
+            network,
+        }) => {
+            commands::run::execute(commands::run::Args {
+                path,
+                lang,
+                profile,
+                unsafe_mode,
+                network,
+                print_cmd: cli.print_cmd,
+            })
+            .await
+        }
+        Some(Command::Down { project, all }) => {
+            commands::down::execute(commands::down::Args { project, all }).await
+        }
+        Some(Command::Nuke {
+            project,
+            all,
+            keep_volumes,
+            keep_state,
+        }) => {
+            commands::nuke::execute(commands::nuke::Args {
+                project,
+                all,
+                keep_volumes,
+                keep_state,
+            })
+            .await
+        }
+        Some(other) => {
+            tracing::info!(?other, "command not implemented in Phase 1");
             Err(Error::NotImplemented)
         }
     }
