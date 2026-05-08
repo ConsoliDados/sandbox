@@ -4,9 +4,13 @@ Source of truth for "what's done, what's next, where are we." A fresh session sh
 
 ## Current status
 
-**Phase 0 — workspace skeleton.** Started 2026-05-06.
+**Phase 1 — lifecycle MVP.** Started 2026-05-06; design alignment + implementation finished 2026-05-07.
 
-The repo compiles (`cargo check`) but the CLI is a stub. No subcommand actually does anything yet.
+`sandbox run/down/nuke .` is wired end-to-end against a real Docker daemon.
+`--print-cmd` shows the rendered `docker run` invocation. `--unsafe` and
+`--network` toggle the source-mount RO/RW and the network namespace.
+49 tests pass headlessly; integration tests that drive Docker for real are
+behind the `docker-tests` feature.
 
 ## Phases
 
@@ -42,15 +46,15 @@ Branch: `feat/lifecycle-mvp`.
 - [x] `sandbox-core::profile` + `config` (load `~/.config/sandbox/config.toml`) — `6ccd08b`
 - [x] `sandbox-core::project` (`Project` resolution + container_name) — `6ccd08b`
 - [x] `sandbox-core::state` (per-project state at `$XDG_DATA_HOME/sandbox/containers/<hash>/`) — `6ccd08b`
-- [ ] `sandbox-docker::Plan` (pure data describing a `docker run`)
-- [ ] `sandbox-docker::run/start/exec/stop/rm`
-- [ ] `sandbox-docker::volume::ensure` (named volumes)
-- [ ] `sandbox-docker::network::ensure` (`sandbox-internal` network)
-- [ ] `sandbox-cli::commands::run` wires it all up
-- [ ] `sandbox-cli::commands::down`
-- [ ] `sandbox-cli::commands::nuke`
-- [ ] Dotfiles bind mount (zshrc + starship; hybrid with `~/.config/sandbox/zsh/.zshrc.sandbox`)
-- [ ] Integration test: `sandbox run` on a node project, drop into shell, see `package.json`
+- [x] `sandbox-docker::Plan` (pure data describing a `docker run`)
+- [x] `sandbox-docker::run/start/exec/stop/rm`
+- [x] `sandbox-docker::volume::ensure` (named volumes)
+- [x] `sandbox-docker::network::ensure` (`sandbox-internal` network)
+- [x] `sandbox-cli::commands::run` wires it all up
+- [x] `sandbox-cli::commands::down`
+- [x] `sandbox-cli::commands::nuke`
+- [x] Dotfiles bind mount (zshrc + starship; hybrid with `~/.config/sandbox/zsh/.zshrc.sandbox`)
+- [x] Integration test: `sandbox run --print-cmd` on a node project (full lifecycle test gated behind `docker-tests` feature)
 
 ### Phase 2 — Volume strategy + network isolation
 
