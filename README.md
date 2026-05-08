@@ -61,6 +61,13 @@ sandbox/
 
 Each crate has its own `AGENTS.md` describing responsibility and conventions.
 
+## Supported platforms
+
+- **Linux** — primary target. Native Docker engine. The MVP runs and is tested here.
+- **macOS** — next target after the MVP. Unix-like; expected to work with Docker Desktop after small adjustments (UID mapping, path normalisation).
+- **WSL2** — conditional future support, only with Docker installed inside the WSL distribution (Docker Desktop's WSL backend has different mount semantics).
+- **Windows (native)** — out of scope.
+
 ## Documentation
 
 Priority reading order (see [`AGENTS.md`](AGENTS.md) for the canonical chain):
