@@ -43,6 +43,11 @@ pub struct LangManifest {
     #[serde(default)]
     pub package_dirs: Vec<String>,
 
+    /// Lockfiles handled with the same isolation strategy as `package_dirs`
+    /// (named volume in safe/paranoid; bind mount in unsafe). See ADR-0003.
+    #[serde(default)]
+    pub lock_files: Vec<String>,
+
     #[serde(default)]
     pub default_port: Option<u16>,
 
@@ -227,6 +232,28 @@ mod tests {
         assert!(names.contains(&"node"));
         assert!(names.contains(&"bun"));
         assert!(names.contains(&"rust"));
+        Ok(())
+    }
+
+    #[test]
+    fn builtin_node_carries_lock_files() -> TestResult {
+        let reg = LanguageRegistry::builtin()?;
+        let node = reg.require("node")?;
+        assert!(node.lock_files.iter().any(|f| f == "package-lock.json"));
+        Ok(())
+    }
+
+    #[test]
+    fn lock_files_default_to_empty() -> TestResult {
+        let m: LangManifest = toml::from_str(
+            r#"
+name = "x"
+display_name = "X"
+image = "x:1"
+detect = ["x"]
+"#,
+        )?;
+        assert!(m.lock_files.is_empty());
         Ok(())
     }
 

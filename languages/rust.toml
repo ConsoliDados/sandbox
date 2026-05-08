@@ -4,6 +4,7 @@ image = "rust:1.93.1"
 detect = ["Cargo.toml"]
 priority = 20
 package_dirs = ["target", ".cargo"]
+lock_files = ["Cargo.lock"]
 default_port = 8080
 extra_packages = ["zsh", "git", "starship"]
 shell = "/bin/zsh"
