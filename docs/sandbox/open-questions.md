@@ -23,6 +23,8 @@ In default mode, `/app` is read-only. `git commit` writes to `.git/`, which is i
 
 Leaning (c). Decide in Phase 2.
 
+**Update 2026-05-07:** ADR-0003 settled volume strategy per profile. Lockfiles (`bun.lockb`, `package-lock.json`, `Cargo.lock`, …) live in named volumes in safe/paranoid and bind-mount into the host source tree in unsafe. Practical consequence: in safe/paranoid the host doesn't see lockfile changes, so committing a lockfile from those profiles requires resolving this question. In unsafe the bind mount already covers the case (commits go through normal host git). The decision here primarily affects safe/paranoid lockfile commits and any `git` activity inside `/app`.
+
 ### OQ-003 — Where does the user mark a project as "trusted" persistently? (2026-05-06)
 
 `--unsafe` is per-invocation. For frequently-used trusted projects, retyping is annoying. Options:
