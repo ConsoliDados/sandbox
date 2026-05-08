@@ -1,13 +1,23 @@
 //! Docker adapter: shells out to `docker` and `docker compose` (see ADR-0002).
 //!
-//! See `crates/sandbox-docker/AGENTS.md` for boundaries and conventions.
+//! Public surface:
+//!
+//! - [`Plan`] — pure data describing a single `docker run`. Built by the CLI
+//!   orchestrator from `core::Project + Profile + LangManifest`. `Display`
+//!   renders it as a literal shell command for `--print-cmd`.
+//! - [`lifecycle`] — container ops keyed by `ContainerName`.
+//! - [`volume`] — idempotent named-volume create/remove.
+//! - [`network`] — `--internal` network create + connect/disconnect.
 
-// Phase 0: placeholder. Implementations land in Phase 1.
+mod cmd;
+mod error;
+pub mod lifecycle;
+pub mod network;
+mod plan;
+pub mod volume;
 
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error("not implemented yet (Phase 0 skeleton)")]
-    NotImplemented,
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
+pub use error::{Error, Result};
+pub use lifecycle::{ExecOpts, exec, exists, is_running, rm, run, start, stop};
+pub use network::{SANDBOX_INTERNAL, connect, disconnect, ensure_internal};
+pub use plan::{Mount, NetworkSpec, Plan, ResourceSpec, SecuritySpec, UserSpec};
+pub use volume::{ensure as ensure_volume, exists as volume_exists, remove as remove_volume};

@@ -16,24 +16,25 @@ Adapter that drives the local Docker daemon by **shelling out** to `docker` and 
 - **Does not own:** decisions about whether to apply hardening (that's `sandbox-core::Profile`), or about whether scan blocks the run (that's `sandbox-cli`).
 - **Depends on:** `sandbox-core`, `tokio`, `tracing`. **Not on `sandbox-scan` or `sandbox-proxy`** — those are sibling adapters consumed by the CLI.
 
-## Layout (target shape — Phase 1+)
+## Layout
 
 ```
 src/
 ├── lib.rs                  re-exports public API
 ├── error.rs                Error enum
-├── plan.rs                 Plan struct (mounts, env, caps, network, etc.)
-├── run.rs                  docker run / start / exec / stop / rm
-├── network.rs              network create/connect/disconnect
-├── volume.rs               named volume ops
-├── compose/
-│   ├── mod.rs              Compose struct + lifecycle
-│   ├── parse.rs            compose file parser (subset of spec we care about)
-│   └── validate.rs         security validator (calls into sandbox-scan)
-└── cmd.rs                  Command builder helpers, --print-cmd formatter
+├── cmd.rs                  Command builder helpers; daemon-down detection
+├── plan.rs                 Plan struct + UserSpec, Mount, NetworkSpec, etc.
+├── volume.rs               named volume ops (ensure / exists / remove)
+├── network.rs              --internal network create + connect/disconnect
+├── lifecycle.rs            container ops: exists / is_running / run / start / stop / exec / rm
+└── compose/                (Phase 6 — not yet present)
+    ├── mod.rs              Compose struct + lifecycle
+    ├── parse.rs            compose file parser (subset)
+    └── validate.rs         security validator (calls into sandbox-scan)
 ```
 
-Today (Phase 0): `lib.rs` only.
+Phase 1 ships `Plan`, `lifecycle`, `volume`, `network`. Compose support lands
+in Phase 6 (ADR-0010).
 
 ## Conventions
 
@@ -43,7 +44,12 @@ Today (Phase 0): `lib.rs` only.
 - **Capture stdout/stderr** for `tracing::debug!`. Don't pipe to inherit unless we're attaching the user's terminal (e.g. `docker exec -it`).
 - **Detect daemon-down errors and surface them as `Error::DaemonUnreachable`.** Don't propagate raw IO errors with bad messages.
 - **No `unwrap` on Command output.** Always check `status.success()`.
-- **Tests need real Docker.** Mark them `#[cfg(feature = "docker-tests")]`. CI provides a daemon.
+- **Tests need real Docker.** The `Plan` itself has unit tests (no daemon
+  required). Tests that drive `docker` for real are in `sandbox-cli/tests/` and
+  gated behind the `docker-tests` feature there. CI provides the daemon.
+- **No `expect`/`unwrap` even in tests.** Use the `?`-returning test pattern
+  with `Result<(), Box<dyn Error>>`; `assert!`, `assert_eq!`, `assert_ne!`,
+  `assert_matches!` are the only acceptable panic forms (per playbook § 6.5).
 
 ## Commands
 
