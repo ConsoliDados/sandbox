@@ -268,7 +268,7 @@ async fn attach_or_run(ctx: &Context, plan: &Plan) -> Result<()> {
 
 fn exec_opts(ctx: &Context) -> ExecOpts {
     ExecOpts {
-        user: Some(ctx.user),
+        user: Some(format!("{}:{}", ctx.user.uid, ctx.user.gid)),
         workdir: Some(ctx.manifest.workdir.clone()),
         interactive: true,
         tty: true,

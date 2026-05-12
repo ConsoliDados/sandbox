@@ -6,6 +6,8 @@
 
 pub(crate) mod dotfiles;
 pub(crate) mod down;
+pub(crate) mod exec;
+pub(crate) mod logs;
 pub(crate) mod nuke;
 pub(crate) mod ps;
 pub(crate) mod run;

@@ -84,11 +84,31 @@ enum Command {
         #[arg(long, value_enum, default_value_t = commands::ps::Format::Table)]
         format: commands::ps::Format,
     },
-    /// Tail sandbox container logs (Phase 3)
-    Logs { project: String },
-    /// Run a command inside a running sandbox (Phase 3)
+    /// Tail sandbox container logs
+    Logs {
+        /// Project path (defaults to current directory)
+        project: Option<String>,
+        /// Stream new log lines until interrupted
+        #[arg(short, long)]
+        follow: bool,
+        /// Number of lines from the end of the logs to show
+        #[arg(long, value_name = "N")]
+        tail: Option<u32>,
+        /// Only show logs since DURATION (e.g. 5m, 1h) or RFC3339 timestamp
+        #[arg(long, value_name = "DURATION")]
+        since: Option<String>,
+    },
+    /// Run a command inside a running sandbox
     Exec {
-        project: String,
+        /// Project path (defaults to current directory). Anything after `--`
+        /// is the command to run.
+        project: Option<String>,
+        /// Override the user (default: container's default user)
+        #[arg(long, value_name = "USER")]
+        user: Option<String>,
+        /// Override the working directory (default: /app)
+        #[arg(long, value_name = "PATH")]
+        workdir: Option<String>,
         #[arg(last = true)]
         cmd: Vec<String>,
     },
@@ -120,7 +140,7 @@ enum NetOp {
 fn main() {
     if let Err(err) = run() {
         eprintln!("error: {err}");
-        std::process::exit(1);
+        std::process::exit(err.exit_code());
     }
 }
 
@@ -179,6 +199,36 @@ async fn dispatch(cli: Cli) -> Result<()> {
             commands::ps::execute(commands::ps::Args {
                 all,
                 format,
+                print_cmd: cli.print_cmd,
+            })
+            .await
+        }
+        Some(Command::Logs {
+            project,
+            follow,
+            tail,
+            since,
+        }) => {
+            commands::logs::execute(commands::logs::Args {
+                project,
+                follow,
+                tail,
+                since,
+                print_cmd: cli.print_cmd,
+            })
+            .await
+        }
+        Some(Command::Exec {
+            project,
+            user,
+            workdir,
+            cmd,
+        }) => {
+            commands::exec::execute(commands::exec::Args {
+                project,
+                cmd,
+                user,
+                workdir,
                 print_cmd: cli.print_cmd,
             })
             .await

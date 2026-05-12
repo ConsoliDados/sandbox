@@ -7,7 +7,7 @@ use sandbox_core::ContainerName;
 use serde::Deserialize;
 
 use crate::cmd::{run_attached, run_capture, run_probe};
-use crate::plan::{Plan, UserSpec};
+use crate::plan::Plan;
 use crate::{Error, Result};
 
 pub async fn exists(name: &ContainerName) -> Result<bool> {
@@ -63,12 +63,51 @@ pub async fn rm(name: &ContainerName, force: bool) -> Result<()> {
     }
 }
 
+/// Options for `docker exec`. `user` is a free-form spec passed through to
+/// `--user` (name, uid, or `uid:gid`); `None` lets Docker pick the image's
+/// default user.
 #[derive(Debug, Clone)]
 pub struct ExecOpts {
-    pub user: Option<UserSpec>,
+    pub user: Option<String>,
     pub workdir: Option<String>,
     pub interactive: bool,
     pub tty: bool,
+}
+
+/// Options for `docker logs`. `tail = None` means stream the full history;
+/// callers should set the SRS default (200) themselves when invoking this from
+/// `sandbox logs`. `since` is a free-form duration string (`5m`, `1h`) or
+/// timestamp accepted by Docker.
+#[derive(Debug, Clone, Default)]
+pub struct LogsOpts {
+    pub follow: bool,
+    pub tail: Option<u32>,
+    pub since: Option<String>,
+}
+
+/// Build the `docker logs` argv for the given container + opts. Pulled out of
+/// [`logs`] so `--print-cmd` can render the invocation without executing.
+pub fn logs_args(name: &ContainerName, opts: &LogsOpts) -> Vec<String> {
+    let mut args: Vec<String> = vec!["logs".into()];
+    if opts.follow {
+        args.push("--follow".into());
+    }
+    if let Some(n) = opts.tail {
+        args.push(format!("--tail={n}"));
+    }
+    if let Some(since) = &opts.since {
+        args.push(format!("--since={since}"));
+    }
+    args.push(name.as_str().into());
+    args
+}
+
+/// Stream container logs to the user's terminal. With `follow=true` blocks
+/// until the user kills the stream or the container exits.
+pub async fn logs(name: &ContainerName, opts: &LogsOpts) -> Result<()> {
+    let args = logs_args(name, opts);
+    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_attached(&argv).await
 }
 
 /// Summary of a container as reported by `docker ps`. Field set is whatever
@@ -138,9 +177,9 @@ pub async fn exec(name: &ContainerName, opts: &ExecOpts, cmd: &[String]) -> Resu
     if opts.tty {
         args.push("--tty".into());
     }
-    if let Some(u) = opts.user {
+    if let Some(u) = &opts.user {
         args.push("--user".into());
-        args.push(format!("{}:{}", u.uid, u.gid));
+        args.push(u.clone());
     }
     if let Some(wd) = &opts.workdir {
         args.push("--workdir".into());
@@ -204,5 +243,31 @@ mod tests {
     fn parse_ps_json_errors_on_invalid_line() {
         let result = parse_ps_json("not json\n");
         assert!(matches!(result, Err(Error::InvalidJson { .. })));
+    }
+
+    fn cn() -> ContainerName {
+        ContainerName::from_hash(&sandbox_core::ProjectHash::from_bytes([1u8; 32]))
+    }
+
+    #[test]
+    fn logs_args_default_only_carries_name() {
+        let name = cn();
+        let args = logs_args(&name, &LogsOpts::default());
+        assert_eq!(args.first().map(String::as_str), Some("logs"));
+        assert_eq!(args.last().map(String::as_str), Some(name.as_str()));
+        assert_eq!(args.len(), 2);
+    }
+
+    #[test]
+    fn logs_args_renders_follow_tail_and_since() {
+        let opts = LogsOpts {
+            follow: true,
+            tail: Some(50),
+            since: Some("5m".into()),
+        };
+        let args = logs_args(&cn(), &opts);
+        assert!(args.contains(&"--follow".to_string()));
+        assert!(args.contains(&"--tail=50".to_string()));
+        assert!(args.contains(&"--since=5m".to_string()));
     }
 }

@@ -4,11 +4,11 @@ Source of truth for "what's done, what's next, where are we." A fresh session sh
 
 ## Current status
 
-**Phase 3 — lifecycle observability.** In progress on `feat/phase-3-observability`. `sandbox ps` ships table + json output; `logs` and `exec` are next. Phases 1+2 merged into `dev` via PR #1 (2026-05-12).
+**Phase 3 — lifecycle observability.** Closed on `feat/phase-3-observability`. `sandbox ps`, `logs`, and `exec` all wired with `--print-cmd`. Exit code 40 returned when the target container is missing or not running. Phases 1+2 merged into `dev` via PR #1 (2026-05-12).
 
-`sandbox run/down/nuke/ps` are wired end-to-end against a real Docker daemon.
+`sandbox run/down/nuke/ps/logs/exec` are wired end-to-end against a real Docker daemon.
 `--print-cmd` shows the rendered `docker` invocation for every wired command.
-62 tests pass headlessly (42 core + 11 docker + 4 cli unit + 5 cli integration);
+66 tests pass headlessly (42 core + 13 docker + 6 cli unit + 5 cli integration);
 tests that drive Docker for real are behind the `docker-tests` feature.
 
 ## Phases
@@ -70,9 +70,10 @@ Branch: `feat/lifecycle-mvp`.
 ### Phase 3 — Lifecycle observability
 
 - [x] `sandbox ps` (table + json)
-- [ ] `sandbox logs PROJECT [--follow]`
-- [ ] `sandbox exec PROJECT -- CMD`
+- [x] `sandbox logs PROJECT [--follow] [--tail] [--since]`
+- [x] `sandbox exec PROJECT -- CMD [--user] [--workdir]`
 - [x] Per-project state at `$XDG_DATA_HOME/sandbox/containers/<hash>/`
+- [x] Exit code 40 for container-not-found / not-running (per SRS)
 
 ### Phase 4 — Scan pipeline
 

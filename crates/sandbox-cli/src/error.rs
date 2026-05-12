@@ -26,8 +26,26 @@ pub(crate) enum Error {
     #[error("clap: {0}")]
     Clap(#[from] clap::Error),
 
+    #[error("no sandbox container for `{name}` (run `sandbox run` first)")]
+    ContainerNotFound { name: String },
+
+    #[error("sandbox container `{name}` is not running (run `sandbox run` first)")]
+    ContainerNotRunning { name: String },
+
     #[error("not implemented yet (Phase 0 skeleton); see roadmap")]
     NotImplemented,
+}
+
+impl Error {
+    /// Exit code per `docs/sandbox/srs.md` § Global. Unmapped variants fall
+    /// through to the generic `1`.
+    pub(crate) fn exit_code(&self) -> i32 {
+        match self {
+            Error::Clap(_) => 2,
+            Error::ContainerNotFound { .. } | Error::ContainerNotRunning { .. } => 40,
+            _ => 1,
+        }
+    }
 }
 
 pub(crate) type Result<T> = std::result::Result<T, Error>;
