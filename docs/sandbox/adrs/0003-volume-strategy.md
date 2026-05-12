@@ -40,12 +40,19 @@ Named Docker volumes only mount at directory paths, so mounting one over a singl
 $XDG_DATA_HOME/sandbox/containers/<hash>/lockfiles/<name>   ←→   /app/<name>   (RW)
 ```
 
-- On each `run`, before `docker run`/`start`, the seed under `lockfiles/<name>` is created if missing. If the host project has the lockfile, it is copied; otherwise an empty file is touched. The seed is never overwritten on subsequent runs — state-dir is the source of truth in safe/paranoid.
+- A manifest-declared lockfile is bound only when it already exists on the host source **or** has been seeded in the state dir on a previous run. Lockfiles absent from both are skipped: with `/app` mounted `:ro`, Docker cannot `mkdirat` a missing `/app/<name>` mountpoint and the whole `docker run` aborts. Users who need a package manager to *create* a fresh lockfile must either `touch` it on the host first or use `--unsafe` for that run.
+- On each `run`, before `docker run`/`start`, the seed under `lockfiles/<name>` is created if missing by copying the host project's current lockfile. The seed is never overwritten on subsequent runs — state-dir is the source of truth in safe/paranoid.
 - The host project tree never sees the modifications (intentional: the threat model T2 requires source RO).
 - Bringing the modified lockfile back to the host (so it can be committed) is deferred to Phase 3 as `sandbox sync-lock` (or equivalent). Until then, users who need the new lockfile in their working tree promote to `unsafe` (where the lockfile is part of the source bind RW) and re-run.
 - `sandbox nuke` removes the entire `containers/<hash>/` subtree, including `lockfiles/`, so promoting a project from `safe` to `unsafe` cleanly is a `nuke` away.
 
 In `unsafe`, no extra mount is added: the `/app` bind is RW and Docker writes pass through to the host file directly.
+
+### Package directory mountpoints (safe / paranoid)
+
+Named volumes are mounted at `/app/<package_dir>` paths *inside* the read-only `/app` bind. Docker creates each inner mountpoint with `mkdirat`, which fails when the parent (`/app`) is a read-only bind whose host source doesn't already contain the directory. To avoid this, `sandbox run` ensures every manifest-declared `package_dir` exists on the host source before invoking `docker run`, creating an empty directory if missing (logged at INFO via `tracing`). This is a benign mutation — any package manager would create the same directory on first install — and matches the principle that the *source files* stay read-only while their carrier paths may need to exist.
+
+`--unsafe` skips this pre-creation: the source bind is already RW and Docker handles missing paths itself.
 
 ## Alternatives considered
 
