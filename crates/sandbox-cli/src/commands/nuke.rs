@@ -1,5 +1,6 @@
 //! `sandbox nuke [PROJECT]` — remove container, named volumes, and state.
 
+use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
 use sandbox_core::{LanguageRegistry, Paths, Project};
@@ -12,6 +13,7 @@ pub(crate) struct Args {
     pub(crate) all: bool,
     pub(crate) keep_volumes: bool,
     pub(crate) keep_state: bool,
+    pub(crate) yes: bool,
 }
 
 pub(crate) async fn execute(args: Args) -> Result<()> {
@@ -21,6 +23,12 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
     let path = resolve_path(args.project.as_deref());
     let registry = LanguageRegistry::builtin()?;
     let project = Project::resolve(&path, &registry, None)?;
+
+    let what = describe_targets(&project, args.keep_volumes, args.keep_state);
+    if !args.yes && !confirm(&project.container_name.to_string(), &what)? {
+        println!("aborted");
+        return Ok(());
+    }
 
     sandbox_docker::rm(&project.container_name, true).await?;
     println!("removed container {}", project.container_name);
@@ -41,6 +49,41 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn describe_targets(project: &Project, keep_volumes: bool, keep_state: bool) -> String {
+    let mut parts = vec!["container".to_string()];
+    if !keep_volumes {
+        let count = project.named_volumes().len();
+        if count > 0 {
+            parts.push(format!("{count} named volume(s)"));
+        }
+    }
+    if !keep_state {
+        parts.push("state directory".to_string());
+    }
+    parts.join(", ")
+}
+
+/// Prompt the user on stderr. Returns true only if the answer is an explicit
+/// `y` / `yes`. EOF or any other input (including empty line) defaults to
+/// abort, matching the SRS `[--yes | -y]` semantics.
+fn confirm(name: &str, targets: &str) -> Result<bool> {
+    let mut stderr = std::io::stderr().lock();
+    write!(
+        stderr,
+        "About to remove {targets} for `{name}`. Continue? [y/N] "
+    )?;
+    stderr.flush()?;
+    drop(stderr);
+
+    let mut line = String::new();
+    let stdin = std::io::stdin();
+    if stdin.lock().read_line(&mut line)? == 0 {
+        return Ok(false);
+    }
+    let answer = line.trim().to_ascii_lowercase();
+    Ok(matches!(answer.as_str(), "y" | "yes"))
 }
 
 fn resolve_path(arg: Option<&str>) -> PathBuf {

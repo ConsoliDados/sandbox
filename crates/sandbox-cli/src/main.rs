@@ -74,6 +74,9 @@ enum Command {
         /// Keep state directory
         #[arg(long)]
         keep_state: bool,
+        /// Skip the confirmation prompt
+        #[arg(short = 'y', long = "yes")]
+        yes: bool,
     },
     /// List sandbox containers
     Ps {
@@ -186,12 +189,14 @@ async fn dispatch(cli: Cli) -> Result<()> {
             all,
             keep_volumes,
             keep_state,
+            yes,
         }) => {
             commands::nuke::execute(commands::nuke::Args {
                 project,
                 all,
                 keep_volumes,
                 keep_state,
+                yes,
             })
             .await
         }
