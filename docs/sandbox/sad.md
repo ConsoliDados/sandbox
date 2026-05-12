@@ -71,13 +71,16 @@
 
 ```rust
 pub struct Project {
-    pub path: PathBuf,             // absolute, canonical
-    pub hash: ProjectHash,         // sha256 of git ls-files (or walkdir fallback)
+    pub path: PathBuf,             // absolute, canonical (symlink-resolved)
+    pub hash: ProjectHash,         // sha256(canonical_path) — see ADR-0009
     pub language: LanguageId,      // resolved via LangManifest::detect
-    pub container_name: String,    // "sandbox-<hash[..12]>"
+    pub container_name: String,    // "sandbox-<hash.hex()[..12]>"
     pub volumes: Vec<NamedVolume>, // from language manifest's package_dirs
 }
 ```
+
+Note: container identity is workspace-stable (path-based), not content-sensitive.
+Scan cache uses a separate content hash; see `sandbox-scan::ContentHash`.
 
 ### `core::Profile`
 
@@ -85,7 +88,7 @@ A Profile is a named bundle of safety flags. Profiles compose with CLI flags (CL
 
 ### `core::LangManifest`
 
-Loaded from `languages/*.toml`. Schema in [`languages/README.md`](../languages/README.md). Hot-reloaded when the file changes (no rebuild).
+Loaded from `languages/*.toml`. Schema in [`languages/README.md`](../../languages/README.md). Hot-reloaded when the file changes (no rebuild).
 
 ### `core::State`
 
@@ -123,7 +126,7 @@ See [`threat-model.md`](threat-model.md) for in/out-of-scope. The architecture m
 | T5 vector files in editor | `scan::heuristics::vscode_autorun` flags `.vscode/tasks.json` with autorun |
 | T6 malicious compose | `scan::compose::validate` checks before `docker compose up` |
 | T7 resource exhaustion | `docker::Plan::resource_limits` from profile |
-| T8 source mutation | `core::hash::project_hash` recomputed each run; mismatch invalidates scan cache |
+| T8 source mutation | `scan::content_hash` recomputed each run; mismatch invalidates scan cache (separate from container ID hash) |
 
 ## Deployment
 

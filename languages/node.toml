@@ -4,6 +4,7 @@ image = "node:24.10.0"
 detect = ["package.json"]
 priority = 0
 package_dirs = ["node_modules", ".pnpm-store", ".yarn"]
+lock_files = ["package-lock.json", "pnpm-lock.yaml", "yarn.lock"]
 default_port = 3000
 extra_packages = ["zsh", "git", "starship"]
 shell = "/bin/zsh"

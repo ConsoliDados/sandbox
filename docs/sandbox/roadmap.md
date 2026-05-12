@@ -4,9 +4,13 @@ Source of truth for "what's done, what's next, where are we." A fresh session sh
 
 ## Current status
 
-**Phase 0 — workspace skeleton.** Started 2026-05-06.
+**Phase 2 — volume strategy + network isolation.** Closed 2026-05-08. ADR-0003 and ADR-0004 are Accepted; lockfile mounts land in safe/paranoid as state-dir RW file binds.
 
-The repo compiles (`cargo check`) but the CLI is a stub. No subcommand actually does anything yet.
+`sandbox run/down/nuke .` is wired end-to-end against a real Docker daemon.
+`--print-cmd` shows the rendered `docker run` invocation. `--unsafe` and
+`--network` toggle the source-mount RO/RW and the network namespace.
+51 tests pass headlessly (39 core + 7 docker + 5 cli integration); tests that
+drive Docker for real are behind the `docker-tests` feature.
 
 ## Phases
 
@@ -19,33 +23,50 @@ The repo compiles (`cargo check`) but the CLI is a stub. No subcommand actually 
 - [x] ADR index with 10 drafts (titles + status only — content deferred to phases that need them)
 - [x] `languages/` manifests for node, bun, rust (ported from `~/Dev/docker-sandbox/`)
 - [x] `scripts/dev/` (lint, test, fmt)
-- [ ] `cargo check` passes (verify after first session)
-- [ ] First commit
+- [x] `cargo check` passes
+- [x] First commit on `main` (`bed3741`)
+- [x] Git Flow: `main` / `dev` branches; work happens on `feat/*`
 
 ### Phase 1 — Run/Down/Nuke + manifests + dotfiles
 
 Goal: the CLI subset that replicates current `docker-sandbox` functionality, but secure-by-default.
 
-- [ ] `sandbox run [PATH]` (auto-detect lang, name container `sandbox-<hash[..12]>`, mount source, attach shell)
-- [ ] `sandbox down [PROJECT]` (stop, keep state)
-- [ ] `sandbox nuke [PROJECT] [--all]` (remove container + volumes + state)
-- [ ] `sandbox-core::LangManifest` loader + detector
-- [ ] `sandbox-core::Project::hash` (`git ls-files` based, walkdir fallback)
-- [ ] `sandbox-core::State` store (XDG-aware)
-- [ ] Dotfiles bind mount (zshrc + starship)
-- [ ] ADR-0001 finalized (Rust binary)
-- [ ] ADR-0009 finalized (container reuse semantics)
+Branch: `feat/lifecycle-mvp`.
+
+- [x] ADR-0001 (Rust binary) accepted
+- [x] ADR-0002 (Docker shell-out vs bollard) accepted
+- [x] ADR-0006 (TOML manifest) accepted
+- [x] ADR-0007 (XDG state storage) accepted
+- [x] ADR-0009 (container reuse semantics) accepted
+- [x] OQ-004 (UID strategy) resolved → numeric `--user $(id -u):$(id -g)`
+- [x] OQ-005 (multi-match priority) resolved → `priority` field, ties on detect-count, error otherwise
+- [x] `sandbox-core::paths` (XDG resolution) — `c8ec734`
+- [x] `sandbox-core::lang` (LangManifest loader + detector) — `c8ec734`
+- [x] `sandbox-core::hash` (canonical-path based, see ADR-0009) — `c8ec734`
+- [x] `sandbox-core::profile` + `config` (load `~/.config/sandbox/config.toml`) — `6ccd08b`
+- [x] `sandbox-core::project` (`Project` resolution + container_name) — `6ccd08b`
+- [x] `sandbox-core::state` (per-project state at `$XDG_DATA_HOME/sandbox/containers/<hash>/`) — `6ccd08b`
+- [x] `sandbox-docker::Plan` (pure data describing a `docker run`)
+- [x] `sandbox-docker::run/start/exec/stop/rm`
+- [x] `sandbox-docker::volume::ensure` (named volumes)
+- [x] `sandbox-docker::network::ensure` (`sandbox-internal` network)
+- [x] `sandbox-cli::commands::run` wires it all up
+- [x] `sandbox-cli::commands::down`
+- [x] `sandbox-cli::commands::nuke`
+- [x] Dotfiles bind mount (zshrc + starship; hybrid with `~/.config/sandbox/zsh/.zshrc.sandbox`)
+- [x] Integration test: `sandbox run --print-cmd` on a node project (full lifecycle test gated behind `docker-tests` feature)
 
 ### Phase 2 — Volume strategy + network isolation
 
-- [ ] Project mount as `:ro` in default mode
-- [ ] Named volumes for each `package_dir` from manifest
-- [ ] `sandbox-internal` network (created on first run)
-- [ ] `--unsafe`, `--network`, `--profile` flags
-- [ ] Profiles loaded from `~/.config/sandbox/config.toml`
-- [ ] ADR-0003 (volume strategy) finalized
-- [ ] ADR-0004 (network isolation) finalized
-- [ ] ADR-0007 (state storage XDG) finalized
+- [x] Project mount as `:ro` in default mode
+- [x] Named volumes for each `package_dir` from manifest
+- [x] Lockfile mounts: state-dir bind RW in safe/paranoid (per ADR-0003)
+- [x] `sandbox-internal` network (created on first run)
+- [x] `--unsafe`, `--network`, `--profile` flags
+- [x] Profiles loaded from `~/.config/sandbox/config.toml`
+- [x] ADR-0003 (volume strategy) finalized
+- [x] ADR-0004 (network isolation) finalized
+- [x] ADR-0007 (state storage XDG) finalized
 
 ### Phase 3 — Lifecycle observability
 
@@ -96,10 +117,10 @@ Goal: the CLI subset that replicates current `docker-sandbox` functionality, but
 
 When starting a new Claude Code session in this repo:
 
-1. **Always** read `docs/roadmap.md` first (you're here).
+1. **Always** read `roadmap.md` first (you're here).
 2. Read `AGENTS.md` for repo shape and reading priority.
 3. Identify the **current phase** above; the first unchecked `[ ]` item is the next task.
-4. Consult `docs/open-questions.md` for unresolved decisions that may block progress.
+4. Consult `open-questions.md` for unresolved decisions that may block progress.
 5. Pick up from where the last session left off.
 
 If the user gives a high-level instruction (e.g. "vamos pra fase 2"), the assistant should:
@@ -109,7 +130,7 @@ If the user gives a high-level instruction (e.g. "vamos pra fase 2"), the assist
 
 ## Out of scope (for now)
 
-See `docs/open-questions.md` and `docs/sad.md` "Future directions". Notably:
+See `open-questions.md` and `sad.md` "Future directions". Notably:
 
 - macOS support (Linux-only for v0.1)
 - LLM-assisted scan

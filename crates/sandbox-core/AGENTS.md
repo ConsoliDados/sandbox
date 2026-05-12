@@ -39,7 +39,7 @@ Today (Phase 0): `lib.rs` only, with module placeholders.
 - **Library error handling**: define `pub enum Error` with `thiserror`. Re-export `pub type Result<T>`. Never use `anyhow` here.
 - **Newtypes for IDs**: `ProjectHash`, `ContainerName`, `LanguageId`. Don't pass raw `String` for things that have semantics.
 - **No global state.** Pass `Config` and `Paths` explicitly.
-- **All public items have `///` doc comments.** Format per `docs/playbook.md` § 5.
+- **All public items have `///` doc comments.** Format per `docs/sandbox/playbook.md` § 5.
 - **Hashing is deterministic.** Same input → same output. Test with fixtures.
 - **Filesystem operations** go through `paths` module — never hardcode `~/.config/sandbox`.
 

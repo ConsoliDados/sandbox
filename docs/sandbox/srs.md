@@ -43,7 +43,9 @@ sandbox run [PATH]
     [--network]           Allow internet egress (otherwise no egress)
     [--no-scan]           Skip pre-flight scan (requires --unsafe)
     [--no-cache]          Force re-scan even if cache hit
-    [--expose SPEC ...]   Map a port to Traefik. SPEC = PORT or PORT:NAME (e.g. 3000 or 3000:web)
+    [--expose PORT ...]   Override port detection. Each PORT becomes a Traefik
+                          entryPoint reachable as <project>.sandbox.local:PORT
+                          (e.g. --expose 3000 5007). See ADR-0005.
     [--shell zsh|bash]    Shell to launch (default: zsh)
     [--rebuild]           Force rebuild of the container image
 ```

@@ -47,4 +47,4 @@ date: <% date %>
 
 ## 7. Open items
 
-<!-- Tracked in docs/open-questions.md. Reference by ID. -->
+<!-- Tracked in open-questions.md. Reference by ID. -->

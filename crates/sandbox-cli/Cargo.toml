@@ -16,11 +16,20 @@ sandbox-docker.workspace = true
 sandbox-scan.workspace = true
 sandbox-proxy.workspace = true
 
-anyhow.workspace = true
+thiserror.workspace = true
 clap.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+directories.workspace = true
+
+[features]
+# Tests that require a live local Docker daemon. Off by default so
+# `cargo test` is hermetic in CI and on machines without Docker.
+docker-tests = []
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints]
 workspace = true
