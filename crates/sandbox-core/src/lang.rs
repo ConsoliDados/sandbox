@@ -65,7 +65,11 @@ pub struct LangManifest {
 }
 
 fn default_shell() -> String {
-    "/bin/zsh".to_string()
+    // Conservative default: every supported base image (debian-slim, alpine,
+    // rust:slim, etc.) ships `/bin/bash` or symlinks `sh` → `bash`. When the
+    // custom-image pipeline lands (extra_packages → built image with zsh,
+    // starship, etc.), language manifests can opt into `/bin/zsh`.
+    "/bin/bash".to_string()
 }
 
 fn default_workdir() -> String {
