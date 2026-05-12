@@ -513,6 +513,8 @@ dependencies = [
  "sandbox-docker",
  "sandbox-proxy",
  "sandbox-scan",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -541,6 +543,7 @@ version = "0.0.1"
 dependencies = [
  "sandbox-core",
  "serde",
+ "serde_json",
  "thiserror 2.0.18",
  "tokio",
  "toml",

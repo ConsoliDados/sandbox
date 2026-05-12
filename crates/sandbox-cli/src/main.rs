@@ -75,8 +75,15 @@ enum Command {
         #[arg(long)]
         keep_state: bool,
     },
-    /// List sandbox containers (Phase 3)
-    Ps,
+    /// List sandbox containers
+    Ps {
+        /// Include stopped containers
+        #[arg(long)]
+        all: bool,
+        /// Output format
+        #[arg(long, value_enum, default_value_t = commands::ps::Format::Table)]
+        format: commands::ps::Format,
+    },
     /// Tail sandbox container logs (Phase 3)
     Logs { project: String },
     /// Run a command inside a running sandbox (Phase 3)
@@ -165,6 +172,14 @@ async fn dispatch(cli: Cli) -> Result<()> {
                 all,
                 keep_volumes,
                 keep_state,
+            })
+            .await
+        }
+        Some(Command::Ps { all, format }) => {
+            commands::ps::execute(commands::ps::Args {
+                all,
+                format,
+                print_cmd: cli.print_cmd,
             })
             .await
         }

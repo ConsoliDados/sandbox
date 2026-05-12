@@ -17,7 +17,10 @@ mod plan;
 pub mod volume;
 
 pub use error::{Error, Result};
-pub use lifecycle::{ExecOpts, exec, exists, is_running, rm, run, start, stop};
+pub use lifecycle::{
+    ContainerInfo, ExecOpts, exec, exists, is_running, list_sandboxes, list_sandboxes_args, rm,
+    run, start, stop,
+};
 pub use network::{SANDBOX_INTERNAL, connect, disconnect, ensure_internal};
 pub use plan::{Mount, NetworkSpec, Plan, ResourceSpec, SecuritySpec, UserSpec};
 pub use volume::{ensure as ensure_volume, exists as volume_exists, remove as remove_volume};

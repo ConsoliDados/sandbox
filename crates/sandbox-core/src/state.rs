@@ -66,6 +66,47 @@ impl Meta {
     pub fn exists_at(state_dir: &Path) -> bool {
         state_dir.join("meta.toml").is_file()
     }
+
+    /// Enumerate every per-project state under `containers_dir` and load each
+    /// `meta.toml`. Returns `Vec<Meta>` sorted by `container_name` for stable
+    /// output. Missing `containers_dir` yields an empty vec (no projects yet);
+    /// subdirs without a readable `meta.toml` are skipped with a warning so a
+    /// single corrupt entry doesn't poison `sandbox ps`.
+    pub fn load_all(containers_dir: &Path) -> Result<Vec<Self>> {
+        let read_dir = match std::fs::read_dir(containers_dir) {
+            Ok(rd) => rd,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(source) => {
+                return Err(Error::Io {
+                    path: containers_dir.to_path_buf(),
+                    source,
+                });
+            }
+        };
+
+        let mut out = Vec::new();
+        for entry in read_dir {
+            let entry = entry.map_err(|source| Error::Io {
+                path: containers_dir.to_path_buf(),
+                source,
+            })?;
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            if !Self::exists_at(&path) {
+                continue;
+            }
+            match Self::load(&path) {
+                Ok(meta) => out.push(meta),
+                Err(e) => {
+                    tracing::warn!(?path, error = %e, "skipping unreadable state");
+                }
+            }
+        }
+        out.sort_by(|a, b| a.container_name.cmp(&b.container_name));
+        Ok(out)
+    }
 }
 
 #[cfg(test)]
@@ -133,6 +174,48 @@ mod tests {
         std::fs::write(tmp.path().join("meta.toml"), "[[[ not toml")?;
         let result = Meta::load(tmp.path());
         assert!(matches!(result, Err(Error::InvalidManifest { .. })));
+        Ok(())
+    }
+
+    #[test]
+    fn load_all_returns_empty_when_dir_missing() -> TestResult {
+        let tmp = tempfile::tempdir()?;
+        let containers = tmp.path().join("containers");
+        assert!(Meta::load_all(&containers)?.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn load_all_collects_and_sorts_metas() -> TestResult {
+        let tmp = tempfile::tempdir()?;
+        let containers = tmp.path().join("containers");
+        let mut second = fixture();
+        second.container_name = "sandbox-zzz".into();
+        second.save(&containers.join("zzz"))?;
+        let mut first = fixture();
+        first.container_name = "sandbox-aaa".into();
+        first.save(&containers.join("aaa"))?;
+
+        let all = Meta::load_all(&containers)?;
+        let names: Vec<_> = all.iter().map(|m| m.container_name.as_str()).collect();
+        assert_eq!(names, vec!["sandbox-aaa", "sandbox-zzz"]);
+        Ok(())
+    }
+
+    #[test]
+    fn load_all_skips_dirs_without_meta_and_corrupt_files() -> TestResult {
+        let tmp = tempfile::tempdir()?;
+        let containers = tmp.path().join("containers");
+        std::fs::create_dir_all(containers.join("empty-dir"))?;
+        std::fs::create_dir_all(containers.join("corrupt"))?;
+        std::fs::write(containers.join("corrupt").join("meta.toml"), "[[[ broken")?;
+        fixture().save(&containers.join("good"))?;
+
+        let all = Meta::load_all(&containers)?;
+        assert_eq!(
+            all.iter().map(|m| m.language.as_str()).collect::<Vec<_>>(),
+            vec!["rust"]
+        );
         Ok(())
     }
 

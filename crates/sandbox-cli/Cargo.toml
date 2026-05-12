@@ -17,6 +17,8 @@ sandbox-scan.workspace = true
 sandbox-proxy.workspace = true
 
 thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 clap.workspace = true
 tokio.workspace = true
 tracing.workspace = true

@@ -4,6 +4,7 @@
 //! or attaches to the user's terminal (`docker run -it`, `docker exec -it`).
 
 use sandbox_core::ContainerName;
+use serde::Deserialize;
 
 use crate::cmd::{run_attached, run_capture, run_probe};
 use crate::plan::{Plan, UserSpec};
@@ -70,6 +71,65 @@ pub struct ExecOpts {
     pub tty: bool,
 }
 
+/// Summary of a container as reported by `docker ps`. Field set is whatever
+/// the `{{json .}}` formatter emits in Docker 24+; we keep only the columns
+/// `sandbox ps` renders.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct ContainerInfo {
+    /// Container name (e.g. `sandbox-abc123def456`). Docker's ps format
+    /// uses the singular field "Names" containing comma-joined aliases;
+    /// for our prefix-named containers it is always a single entry.
+    pub names: String,
+    /// Human status string: `Up 5 hours`, `Exited (0) 2 minutes ago`, etc.
+    pub status: String,
+    /// Raw state: `running`, `exited`, `created`, `paused`, `restarting`.
+    pub state: String,
+    /// Comma-joined network names: `sandbox-internal`, `bridge`, etc.
+    pub networks: String,
+    pub image: String,
+    pub running_for: String,
+}
+
+/// Returns the docker arguments used by [`list_sandboxes`]. Exposed so
+/// `--print-cmd` can show what would run without actually executing it.
+pub fn list_sandboxes_args() -> &'static [&'static str] {
+    &[
+        "ps",
+        "--all",
+        "--no-trunc",
+        "--filter",
+        "name=^sandbox-",
+        "--format",
+        "{{json .}}",
+    ]
+}
+
+/// List all containers managed by sandbox (name starts with `sandbox-`).
+/// Includes stopped containers; callers filter by `state` if they want only
+/// running ones.
+pub async fn list_sandboxes() -> Result<Vec<ContainerInfo>> {
+    let stdout = run_capture(list_sandboxes_args()).await?;
+    parse_ps_json(&stdout)
+}
+
+fn parse_ps_json(stdout: &str) -> Result<Vec<ContainerInfo>> {
+    let mut out = Vec::new();
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let info: ContainerInfo =
+            serde_json::from_str(trimmed).map_err(|e| Error::InvalidJson {
+                cmd: "docker ps".into(),
+                reason: e.to_string(),
+            })?;
+        out.push(info);
+    }
+    Ok(out)
+}
+
 pub async fn exec(name: &ContainerName, opts: &ExecOpts, cmd: &[String]) -> Result<()> {
     let mut args: Vec<String> = vec!["exec".into()];
     if opts.interactive {
@@ -94,5 +154,55 @@ pub async fn exec(name: &ContainerName, opts: &ExecOpts, cmd: &[String]) -> Resu
         run_attached(&argv).await
     } else {
         run_capture(&argv).await.map(|_| ())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
+    #[test]
+    fn list_sandboxes_args_carries_name_filter() {
+        let args = list_sandboxes_args();
+        assert!(args.contains(&"ps"));
+        assert!(args.contains(&"--all"));
+        assert!(args.windows(2).any(|w| w == ["--filter", "name=^sandbox-"]));
+        assert!(args.windows(2).any(|w| w == ["--format", "{{json .}}"]));
+    }
+
+    #[test]
+    fn parse_ps_json_collects_one_per_line() -> TestResult {
+        let fixture = r#"
+{"Names":"sandbox-abc123","Status":"Up 5 hours","State":"running","Networks":"sandbox-internal","Image":"node:24","RunningFor":"5 hours ago"}
+{"Names":"sandbox-def456","Status":"Exited (0) 2 minutes ago","State":"exited","Networks":"bridge","Image":"rust:1.85","RunningFor":"3 hours ago"}
+"#;
+        let infos = parse_ps_json(fixture)?;
+        let summary: Vec<_> = infos
+            .iter()
+            .map(|i| (i.names.as_str(), i.state.as_str(), i.networks.as_str()))
+            .collect();
+        assert_eq!(
+            summary,
+            vec![
+                ("sandbox-abc123", "running", "sandbox-internal"),
+                ("sandbox-def456", "exited", "bridge"),
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn parse_ps_json_yields_empty_for_no_containers() -> TestResult {
+        assert!(parse_ps_json("")?.is_empty());
+        assert!(parse_ps_json("   \n  \n")?.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn parse_ps_json_errors_on_invalid_line() {
+        let result = parse_ps_json("not json\n");
+        assert!(matches!(result, Err(Error::InvalidJson { .. })));
     }
 }

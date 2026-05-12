@@ -7,4 +7,5 @@
 pub(crate) mod dotfiles;
 pub(crate) mod down;
 pub(crate) mod nuke;
+pub(crate) mod ps;
 pub(crate) mod run;
