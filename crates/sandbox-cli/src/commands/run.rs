@@ -41,6 +41,7 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
     for vol in ctx.project.named_volumes() {
         sandbox_docker::ensure_volume(vol.as_str()).await?;
     }
+    ensure_host_mountpoints(&ctx)?;
     seed_lockfiles(&ctx)?;
 
     attach_or_run(&ctx, &plan).await?;
@@ -109,6 +110,14 @@ impl Context {
 /// changes flow straight to the host project tree. In `safe`/`paranoid` each
 /// declared lockfile is mapped to a writable file under the per-project state
 /// dir, which we'll bind on top of `/app/<name>`.
+///
+/// We filter to lockfiles that already exist on the host source **or** have
+/// already been seeded in the state dir. Skipping the others avoids a Docker
+/// failure mode: with `/app` mounted `:ro`, the daemon cannot create a missing
+/// `/app/<lockfile>` mountpoint inside the read-only filesystem. A lockfile
+/// the user hasn't created yet simply doesn't get bound; package managers
+/// that need to *create* one must run under `--unsafe` (or the user can
+/// `touch` it on the host first). See ADR-0003 § Lockfile mount mechanics.
 fn lockfile_seed_paths(
     paths: &Paths,
     project: &Project,
@@ -121,15 +130,19 @@ fn lockfile_seed_paths(
     project
         .lock_files
         .iter()
+        .filter(|name| {
+            let seed = dir.join(name);
+            let host = project.path.join(name);
+            seed.is_file() || host.is_file()
+        })
         .map(|name| (name.clone(), dir.join(name)))
         .collect()
 }
 
-/// Create the lockfiles seed dir and ensure each declared lockfile exists on
-/// the host as a regular file (so Docker performs a file bind, not a directory
-/// bind). On first sight we copy the project's current lockfile if present;
-/// otherwise we touch an empty file. We never overwrite an existing seed —
-/// state-dir is the source of truth in `safe`/`paranoid`.
+/// Create the lockfiles seed dir and ensure each filtered lockfile exists as a
+/// regular file under the state dir so Docker performs a file bind. On first
+/// sight we copy the project's current lockfile from the host; subsequent runs
+/// preserve the seed (state-dir is the source of truth in safe/paranoid).
 fn seed_lockfiles(ctx: &Context) -> Result<()> {
     if ctx.lockfile_seeds.is_empty() {
         return Ok(());
@@ -141,10 +154,31 @@ fn seed_lockfiles(ctx: &Context) -> Result<()> {
             continue;
         }
         let host_source = ctx.project.path.join(name);
-        if host_source.is_file() {
-            std::fs::copy(&host_source, seed)?;
-        } else {
-            std::fs::File::create(seed)?;
+        // lockfile_seed_paths only yields entries with a present host file or
+        // a present seed; if we reach here, the host file must exist.
+        std::fs::copy(&host_source, seed)?;
+    }
+    Ok(())
+}
+
+/// Create empty `package_dir`s on the host project tree when they're missing.
+///
+/// Required in safe/paranoid: `/app` is bind-mounted `:ro`, and Docker cannot
+/// `mkdirat` the inner mountpoint (`/app/node_modules`, …) inside a read-only
+/// bind. Creating the directory on the host first means Docker mounts the
+/// named volume *over* an existing path instead of trying to create one.
+///
+/// Under `--unsafe` the source bind is RW so Docker handles this itself; we
+/// skip the pre-create to avoid touching the source tree unnecessarily.
+fn ensure_host_mountpoints(ctx: &Context) -> Result<()> {
+    if ctx.profile.unsafe_mode {
+        return Ok(());
+    }
+    for dir in &ctx.project.package_dirs {
+        let path = ctx.project.path.join(dir);
+        if !path.exists() {
+            tracing::info!(?path, "pre-creating package_dir on host for RO bind");
+            std::fs::create_dir_all(&path)?;
         }
     }
     Ok(())
@@ -172,7 +206,8 @@ fn build_plan(ctx: &Context) -> Plan {
             cpus: ctx.profile.cpu,
             memory_mb: ctx.profile.memory_mb,
         },
-        command: vec![ctx.manifest.shell.clone()],
+        entrypoint: Some(ctx.manifest.shell.clone()),
+        command: vec![],
         interactive: true,
         tty: true,
         remove_on_exit: false,
@@ -268,7 +303,7 @@ async fn attach_or_run(ctx: &Context, plan: &Plan) -> Result<()> {
 
 fn exec_opts(ctx: &Context) -> ExecOpts {
     ExecOpts {
-        user: Some(ctx.user),
+        user: Some(format!("{}:{}", ctx.user.uid, ctx.user.gid)),
         workdir: Some(ctx.manifest.workdir.clone()),
         interactive: true,
         tty: true,

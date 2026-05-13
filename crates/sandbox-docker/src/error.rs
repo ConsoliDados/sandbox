@@ -26,6 +26,9 @@ pub enum Error {
     #[error("output of docker `{cmd}` was not valid utf-8")]
     NonUtf8Output { cmd: String },
 
+    #[error("could not parse json output of docker `{cmd}`: {reason}")]
+    InvalidJson { cmd: String, reason: String },
+
     #[error("could not read host user id via `id -{flag}`: {reason}")]
     UserIdLookup { flag: char, reason: String },
 

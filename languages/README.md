@@ -16,7 +16,7 @@ priority       = 0                       # tie-breaker on multi-match (higher wi
 package_dirs   = ["node_modules"]        # writable named volumes; default []
 default_port   = 3000                    # fallback when port detection finds nothing
 extra_packages = ["zsh", "git", "starship"]  # apt/apk packages to install on top
-shell          = "/bin/zsh"              # default shell inside container
+shell          = "/bin/bash"             # default shell (switch to zsh once custom-image pipeline lands)
 workdir        = "/app"                  # default; rarely overridden
 
 # Optional: source scan patterns the proxy uses to find listening ports.

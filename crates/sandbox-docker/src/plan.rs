@@ -108,6 +108,10 @@ pub struct Plan {
     pub network: NetworkSpec,
     pub security: SecuritySpec,
     pub resources: ResourceSpec,
+    /// Override the image's ENTRYPOINT. Set to the shell binary so that
+    /// images shipping a non-shell entrypoint (e.g. `node:24` runs `node`
+    /// by default) still drop the user into an interactive session.
+    pub entrypoint: Option<String>,
     pub command: Vec<String>,
     pub interactive: bool,
     pub tty: bool,
@@ -211,6 +215,11 @@ impl Plan {
             a.push(format!("{mem}m"));
         }
 
+        if let Some(ep) = &self.entrypoint {
+            a.push("--entrypoint".into());
+            a.push(ep.clone());
+        }
+
         a.push(self.image.clone());
         a.extend(self.command.iter().cloned());
         a
@@ -280,7 +289,8 @@ mod tests {
                 cpus: Some(2.0),
                 memory_mb: Some(4096),
             },
-            command: vec!["/bin/zsh".into()],
+            entrypoint: Some("/bin/bash".into()),
+            command: vec![],
             interactive: true,
             tty: true,
             remove_on_exit: false,
@@ -334,11 +344,19 @@ mod tests {
     }
 
     #[test]
-    fn args_end_with_image_and_command() {
+    fn args_end_with_image() {
         let args = fixture_plan().to_args();
-        let mut iter = args.iter().rev();
-        assert_eq!(iter.next().map(String::as_str), Some("/bin/zsh"));
-        assert_eq!(iter.next().map(String::as_str), Some("node:24.10.0"));
+        assert_eq!(args.last().map(String::as_str), Some("node:24.10.0"));
+    }
+
+    #[test]
+    fn entrypoint_override_renders_before_image() {
+        let args = fixture_plan().to_args();
+        assert!(has_pair(&args, "--entrypoint", "/bin/bash"));
+        // entrypoint must come before the image (positional arg)
+        let entry_idx = args.iter().position(|a| a == "--entrypoint");
+        let image_idx = args.iter().position(|a| a == "node:24.10.0");
+        assert!(matches!((entry_idx, image_idx), (Some(e), Some(i)) if e < i));
     }
 
     #[test]

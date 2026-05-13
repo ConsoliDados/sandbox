@@ -7,7 +7,7 @@ package_dirs = ["target", ".cargo"]
 lock_files = ["Cargo.lock"]
 default_port = 8080
 extra_packages = ["zsh", "git", "starship"]
-shell = "/bin/zsh"
+shell = "/bin/bash"
 workdir = "/app"
 
 [port_detection]

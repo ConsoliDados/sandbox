@@ -4,13 +4,12 @@ Source of truth for "what's done, what's next, where are we." A fresh session sh
 
 ## Current status
 
-**Phase 2 — volume strategy + network isolation.** Closed 2026-05-08. ADR-0003 and ADR-0004 are Accepted; lockfile mounts land in safe/paranoid as state-dir RW file binds.
+**Phase 3 — lifecycle observability.** Closed on `feat/phase-3-observability`. `sandbox ps`, `logs`, and `exec` all wired with `--print-cmd`. Exit code 40 returned when the target container is missing or not running. Phases 1+2 merged into `dev` via PR #1 (2026-05-12).
 
-`sandbox run/down/nuke .` is wired end-to-end against a real Docker daemon.
-`--print-cmd` shows the rendered `docker run` invocation. `--unsafe` and
-`--network` toggle the source-mount RO/RW and the network namespace.
-51 tests pass headlessly (39 core + 7 docker + 5 cli integration); tests that
-drive Docker for real are behind the `docker-tests` feature.
+`sandbox run/down/nuke/ps/logs/exec` are wired end-to-end against a real Docker daemon.
+`--print-cmd` shows the rendered `docker` invocation for every wired command.
+66 tests pass headlessly (42 core + 13 docker + 6 cli unit + 5 cli integration);
+tests that drive Docker for real are behind the `docker-tests` feature.
 
 ## Phases
 
@@ -70,10 +69,11 @@ Branch: `feat/lifecycle-mvp`.
 
 ### Phase 3 — Lifecycle observability
 
-- [ ] `sandbox ps` (table + json)
-- [ ] `sandbox logs PROJECT [--follow]`
-- [ ] `sandbox exec PROJECT -- CMD`
-- [ ] Per-project state at `$XDG_DATA_HOME/sandbox/containers/<hash>/`
+- [x] `sandbox ps` (table + json)
+- [x] `sandbox logs PROJECT [--follow] [--tail] [--since]`
+- [x] `sandbox exec PROJECT -- CMD [--user] [--workdir]`
+- [x] Per-project state at `$XDG_DATA_HOME/sandbox/containers/<hash>/`
+- [x] Exit code 40 for container-not-found / not-running (per SRS)
 
 ### Phase 4 — Scan pipeline
 

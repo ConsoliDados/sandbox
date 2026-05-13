@@ -74,14 +74,44 @@ enum Command {
         /// Keep state directory
         #[arg(long)]
         keep_state: bool,
+        /// Skip the confirmation prompt
+        #[arg(short = 'y', long = "yes")]
+        yes: bool,
     },
-    /// List sandbox containers (Phase 3)
-    Ps,
-    /// Tail sandbox container logs (Phase 3)
-    Logs { project: String },
-    /// Run a command inside a running sandbox (Phase 3)
+    /// List sandbox containers
+    Ps {
+        /// Include stopped containers
+        #[arg(long)]
+        all: bool,
+        /// Output format
+        #[arg(long, value_enum, default_value_t = commands::ps::Format::Table)]
+        format: commands::ps::Format,
+    },
+    /// Tail sandbox container logs
+    Logs {
+        /// Project path (defaults to current directory)
+        project: Option<String>,
+        /// Stream new log lines until interrupted
+        #[arg(short, long)]
+        follow: bool,
+        /// Number of lines from the end of the logs to show
+        #[arg(long, value_name = "N")]
+        tail: Option<u32>,
+        /// Only show logs since DURATION (e.g. 5m, 1h) or RFC3339 timestamp
+        #[arg(long, value_name = "DURATION")]
+        since: Option<String>,
+    },
+    /// Run a command inside a running sandbox
     Exec {
-        project: String,
+        /// Project path (defaults to current directory). Anything after `--`
+        /// is the command to run.
+        project: Option<String>,
+        /// Override the user (default: container's default user)
+        #[arg(long, value_name = "USER")]
+        user: Option<String>,
+        /// Override the working directory (default: /app)
+        #[arg(long, value_name = "PATH")]
+        workdir: Option<String>,
         #[arg(last = true)]
         cmd: Vec<String>,
     },
@@ -113,7 +143,7 @@ enum NetOp {
 fn main() {
     if let Err(err) = run() {
         eprintln!("error: {err}");
-        std::process::exit(1);
+        std::process::exit(err.exit_code());
     }
 }
 
@@ -159,12 +189,52 @@ async fn dispatch(cli: Cli) -> Result<()> {
             all,
             keep_volumes,
             keep_state,
+            yes,
         }) => {
             commands::nuke::execute(commands::nuke::Args {
                 project,
                 all,
                 keep_volumes,
                 keep_state,
+                yes,
+            })
+            .await
+        }
+        Some(Command::Ps { all, format }) => {
+            commands::ps::execute(commands::ps::Args {
+                all,
+                format,
+                print_cmd: cli.print_cmd,
+            })
+            .await
+        }
+        Some(Command::Logs {
+            project,
+            follow,
+            tail,
+            since,
+        }) => {
+            commands::logs::execute(commands::logs::Args {
+                project,
+                follow,
+                tail,
+                since,
+                print_cmd: cli.print_cmd,
+            })
+            .await
+        }
+        Some(Command::Exec {
+            project,
+            user,
+            workdir,
+            cmd,
+        }) => {
+            commands::exec::execute(commands::exec::Args {
+                project,
+                cmd,
+                user,
+                workdir,
+                print_cmd: cli.print_cmd,
             })
             .await
         }
