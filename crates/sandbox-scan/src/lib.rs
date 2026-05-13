@@ -3,6 +3,7 @@
 //! See `crates/sandbox-scan/AGENTS.md` for boundaries and conventions.
 
 pub mod cache;
+pub mod compose;
 pub mod error;
 pub mod findings;
 pub mod heuristics;
