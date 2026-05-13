@@ -12,19 +12,23 @@ use walkdir::WalkDir;
 
 use crate::{Error, Result};
 
-/// Compute the content hash of every file under `project_root`. Returns a
-/// 64-char hex SHA-256.
-pub fn content_hash(project_root: &Path) -> Result<String> {
-    let files = match list_git_files(project_root) {
-        Some(files) => files,
-        None => list_walkdir_files(project_root)?,
-    };
+/// Enumerate every file under `project_root`. Prefers `git ls-files`; falls
+/// back to a walkdir that hard-ignores common package dirs and VCS metadata.
+/// Returned paths are project-relative, sorted lexicographically.
+pub fn list_files(project_root: &Path) -> Result<Vec<String>> {
+    match list_git_files(project_root) {
+        Some(files) => Ok(files),
+        None => list_walkdir_files(project_root),
+    }
+}
 
+/// Hash the given (project-relative) files under `project_root`. Files that
+/// disappear between listing and reading are skipped silently so the result
+/// stays stable across racy git states (e.g. a staged delete).
+pub fn hash_files(project_root: &Path, files: &[String]) -> Result<String> {
     let mut top = Sha256::new();
-    for rel in &files {
+    for rel in files {
         let abs = project_root.join(rel);
-        // A path can be listed by git but not present on disk (deleted but
-        // un-staged). Skip silently so the hash stays stable.
         let bytes = match std::fs::read(&abs) {
             Ok(b) => b,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
@@ -39,6 +43,13 @@ pub fn content_hash(project_root: &Path) -> Result<String> {
         top.update(entry.finalize());
     }
     Ok(hex::encode(top.finalize()))
+}
+
+/// Compute the content hash of every file under `project_root`. Returns a
+/// 64-char hex SHA-256.
+pub fn content_hash(project_root: &Path) -> Result<String> {
+    let files = list_files(project_root)?;
+    hash_files(project_root, &files)
 }
 
 /// `git ls-files -z` from `project_root`. `None` means git isn't available

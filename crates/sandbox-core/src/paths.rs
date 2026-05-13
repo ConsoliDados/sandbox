@@ -96,6 +96,12 @@ impl Paths {
     pub fn scan_cache_dir(&self) -> PathBuf {
         self.cache.join("scan")
     }
+
+    /// User-global suppression file for scan findings. See ADR-0008 and
+    /// OQ-007 — project-local ignore files are forbidden by design.
+    pub fn scan_ignore_file(&self) -> PathBuf {
+        self.config.join("scan-ignore.toml")
+    }
 }
 
 #[cfg(test)]
