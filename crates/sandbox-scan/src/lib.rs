@@ -5,6 +5,7 @@
 pub mod cache;
 pub mod error;
 pub mod findings;
+pub mod heuristics;
 pub mod project_hash;
 pub mod yara;
 
