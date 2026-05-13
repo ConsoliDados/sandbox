@@ -45,6 +45,7 @@ hex = "0.4"
 walkdir = "2"
 regex = "1"
 directories = "5"
+yara-x = "1.16"
 
 [profile.release]
 lto = "thin"

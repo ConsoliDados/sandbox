@@ -18,8 +18,10 @@ hex.workspace = true
 walkdir.workspace = true
 regex.workspace = true
 
-# yara-x will be added in Phase 4.
-# yara-x = "0.x"
+yara-x.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints]
 workspace = true
