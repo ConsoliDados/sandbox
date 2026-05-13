@@ -22,12 +22,20 @@ pub(crate) struct Args {
     pub(crate) profile: Option<String>,
     pub(crate) unsafe_mode: bool,
     pub(crate) network: bool,
+    pub(crate) no_scan: bool,
     pub(crate) print_cmd: bool,
 }
 
 pub(crate) async fn execute(args: Args) -> Result<()> {
     let span = tracing::info_span!("run", path = %args.path.display());
     let _entered = span.enter();
+
+    // --no-scan is the explicit "I know what I'm doing" override; it only
+    // makes sense paired with --unsafe (the scan layer matches the trust
+    // boundary). See SRS § run.
+    if args.no_scan && !args.unsafe_mode {
+        return Err(crate::Error::NoScanRequiresUnsafe);
+    }
 
     let ctx = Context::load(&args)?;
     let plan = build_plan(&ctx);
@@ -36,6 +44,8 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
         println!("{plan}");
         return Ok(());
     }
+
+    pre_flight_scan(&ctx, &args)?;
 
     sandbox_docker::ensure_internal(SANDBOX_INTERNAL).await?;
     for vol in ctx.project.named_volumes() {
@@ -47,6 +57,60 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
     attach_or_run(&ctx, &plan).await?;
     save_state(&ctx)?;
     Ok(())
+}
+
+/// Run YARA + heuristics + compose against the project before docker run.
+/// Skipped in unsafe mode (the trust boundary is the user's call). Blocks
+/// with exit 30 (`Error::ScanBlocked`) when any finding is severity ≥ High.
+fn pre_flight_scan(ctx: &Context, args: &Args) -> Result<()> {
+    if args.unsafe_mode || args.no_scan {
+        tracing::info!("scan skipped (unsafe profile)");
+        return Ok(());
+    }
+    let opts = sandbox_scan::ScanOpts {
+        no_cache: false,
+        cache_dir: Some(ctx.paths.scan_cache_dir()),
+        ignore_file: Some(ctx.paths.scan_ignore_file()),
+        project_hash: Some(ctx.project.hash.short().to_string()),
+    };
+    let report = sandbox_scan::scan(&ctx.project.path, &opts)?;
+    let blocking: Vec<_> = report
+        .findings
+        .iter()
+        .filter(|f| f.severity >= sandbox_scan::Severity::High)
+        .collect();
+    if blocking.is_empty() {
+        let total = report.findings.len();
+        if total > 0 {
+            tracing::info!(total, "scan clean of blocking findings");
+        }
+        return Ok(());
+    }
+    eprintln!(
+        "sandbox scan blocked the run — {} finding(s) at severity ≥ {}:",
+        blocking.len(),
+        sandbox_scan::Severity::High
+    );
+    for f in &blocking {
+        let location = match f.line {
+            Some(line) => format!("{}:{}", f.path.display(), line),
+            None => f.path.display().to_string(),
+        };
+        eprintln!("  [{:>8}] {:<55} {}", f.severity, f.rule_id, location);
+        eprintln!("           {}", f.message);
+        if let Some(rem) = &f.remediation {
+            eprintln!("           ↳ {rem}");
+        }
+    }
+    eprintln!(
+        "\nReview with `sandbox scan {} --explain`, suppress with `~/.config/sandbox/scan-ignore.toml`,",
+        ctx.project.path.display()
+    );
+    eprintln!("or override with `--unsafe` if you've audited and trust this project.");
+    Err(crate::Error::ScanBlocked {
+        count: blocking.len(),
+        threshold: sandbox_scan::Severity::High.to_string(),
+    })
 }
 
 struct Context {

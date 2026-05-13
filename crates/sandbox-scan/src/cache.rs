@@ -14,7 +14,12 @@ use crate::{Error, Result};
 /// Current ruleset version. Bump whenever the YARA rules, heuristic regexes,
 /// or compose checks change in a way that could alter findings. Old cache
 /// entries with a lower version are ignored on lookup.
-pub const RULESET_VERSION: u32 = 1;
+///
+/// History:
+/// - v1: initial ruleset (Contagious Interview YARA + heuristics + compose).
+/// - v2: `heuristics/eval_function_constructor` widened to match
+///   `new (Function.constructor)(…)` parenthesized form.
+pub const RULESET_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Entry {

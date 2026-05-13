@@ -11,3 +11,4 @@ pub(crate) mod logs;
 pub(crate) mod nuke;
 pub(crate) mod ps;
 pub(crate) mod run;
+pub(crate) mod scan;

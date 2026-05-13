@@ -4,11 +4,10 @@ Source of truth for "what's done, what's next, where are we." A fresh session sh
 
 ## Current status
 
-**Phase 3 — lifecycle observability.** Closed on `feat/phase-3-observability`. `sandbox ps`, `logs`, and `exec` all wired with `--print-cmd`. Exit code 40 returned when the target container is missing or not running. Phases 1+2 merged into `dev` via PR #1 (2026-05-12).
+**Phase 4a — scan pipeline (YARA + heuristics + compose + cache + pre-flight).** In progress on `feat/phase-4-scan-pipeline`. ClamAV motor split into Phase 4b. Phase 3 merged into `dev` via PR #2 (2026-05-13).
 
-`sandbox run/down/nuke/ps/logs/exec` are wired end-to-end against a real Docker daemon.
-`--print-cmd` shows the rendered `docker` invocation for every wired command.
-66 tests pass headlessly (42 core + 13 docker + 6 cli unit + 5 cli integration);
+`sandbox run/down/nuke/ps/logs/exec/scan` are wired end-to-end against a real Docker daemon. Pre-flight scan runs before `docker run` in safe/paranoid; blocking findings (severity ≥ High) exit 30.
+130 tests pass headlessly (42 core + 14 docker + 62 scan + 6 cli unit + 6 cli integration);
 tests that drive Docker for real are behind the `docker-tests` feature.
 
 ## Phases
@@ -75,16 +74,25 @@ Branch: `feat/lifecycle-mvp`.
 - [x] Per-project state at `$XDG_DATA_HOME/sandbox/containers/<hash>/`
 - [x] Exit code 40 for container-not-found / not-running (per SRS)
 
-### Phase 4 — Scan pipeline
+### Phase 4a — Scan pipeline (YARA + heuristics + compose)
 
-- [ ] `sandbox-scan::yara` (using `yara-x` crate)
-- [ ] Bundled YARA rules for known IoCs (Contagious Interview, etc.)
-- [ ] `sandbox-scan::heuristics` (regex patterns: `Function.constructor`, `runOn: "folderOpen"`, `Buffer.from(.*base64)`, suspicious `child_process.exec`, etc.)
-- [ ] `sandbox-scan::compose` (compose file validator: `privileged`, host mounts, `network_mode: host`, etc.)
-- [ ] Scan cache at `$XDG_CACHE_HOME/sandbox/scan/<hash>.toml`
-- [ ] `sandbox scan [PATH]` standalone command
-- [ ] Pre-flight scan integrated into `run`
-- [ ] ADR-0008 (scan pipeline tiers) finalized
+- [x] `sandbox-scan::yara` (using `yara-x` crate)
+- [x] Bundled YARA rules for known IoCs (Contagious Interview / Lazarus 2026-05-06)
+- [x] `sandbox-scan::heuristics` (vscode autorun, package.json hooks, eval shapes, base64+network)
+- [x] `sandbox-scan::compose` (privileged, host namespaces, dangerous caps, host mounts)
+- [x] Scan cache at `$XDG_CACHE_HOME/sandbox/scan/<hash>.toml` with ruleset versioning
+- [x] User-global suppression at `~/.config/sandbox/scan-ignore.toml` (OQ-007 resolved)
+- [x] `sandbox scan [PATH] [--no-cache] [--explain] [--format json|table]` standalone
+- [x] Pre-flight scan integrated into `run` (exit 30 on severity ≥ High)
+- [x] `--no-scan` flag (requires `--unsafe` per SRS)
+- [x] ADR-0008 (scan pipeline tiers) accepted
+
+### Phase 4b — ClamAV motor
+
+- [ ] `sandbox/scanner:latest` image (ClamAV + freshclam) — published image
+- [ ] Ephemeral scan container in `sandbox-scan` (named volume `sandbox-scanner-db`)
+- [ ] `sandbox scan --update-db` (bridge network, run freshclam, exit)
+- [ ] ClamAV stage wired after heuristics in the engine pipeline (mandatory in `paranoid`, opt-in in `safe`)
 
 ### Phase 5 — Reverse proxy + port detection
 

@@ -21,7 +21,9 @@ const RULE_EVAL_ATOB: &str = "heuristics/eval_atob";
 
 fn fn_constructor() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| compile(r"Function\s*\.\s*constructor\s*\("))
+    // Covers both `Function.constructor(...)` and the parenthesized form
+    // `new (Function.constructor)(...)` that the Lazarus profile.js used.
+    R.get_or_init(|| compile(r"Function\s*\.\s*constructor\s*\)?\s*\("))
 }
 
 fn new_function_string() -> &'static Regex {
@@ -96,6 +98,14 @@ mod tests {
     #[test]
     fn fires_on_function_constructor() {
         let body = "const f = Function.constructor('return 1+1');";
+        let f = check(Path::new("a.js"), body);
+        assert!(f.iter().any(|x| x.rule_id == RULE_FN_CONSTRUCTOR));
+    }
+
+    #[test]
+    fn fires_on_parenthesized_function_constructor() {
+        // The exact shape from the Lazarus profile.js backdoor.
+        let body = "const x = new (Function.constructor)('require','m','...');";
         let f = check(Path::new("a.js"), body);
         assert!(f.iter().any(|x| x.rule_id == RULE_FN_CONSTRUCTOR));
     }
