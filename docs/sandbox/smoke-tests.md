@@ -458,7 +458,15 @@ $SB proxy status
 
 curl -s http://localhost:8090/api/version
 # → JSON with version: "3.1.x"
+
+# Dashboard (HTML) at:
+# → http://localhost:8090/dashboard/      (trailing slash matters)
 ```
+
+Note: `curl http://localhost:8090/` (with no path) returns **404 page not
+found** — that's expected. Traefik has no root route by design; the API
+lives under `/api/*` and the UI under `/dashboard/`. Anything else on
+that entryPoint legitimately 404s.
 
 Generated artifacts at `~/.local/share/sandbox/proxy/`:
 - `traefik.yaml` (static config with the entryPoints and docker provider)

@@ -72,8 +72,13 @@ fn render_static_config(cfg: &ProxyConfig) -> String {
         out.push_str(&format!("    address: \":{port}\"\n"));
     }
     if cfg.dashboard {
+        // Must be named `traefik` (not `dashboard`) so `api.insecure: true`
+        // auto-attaches the dashboard + API routers to this entryPoint. With
+        // any other name the auto-router has nowhere to bind and requests
+        // here return 404 with no route matched. See Traefik docs on
+        // `api.insecure`.
         out.push_str(&format!(
-            "  dashboard:\n    address: \":{DASHBOARD_PORT}\"\n"
+            "  traefik:\n    address: \":{DASHBOARD_PORT}\"\n"
         ));
     }
     out.push('\n');
@@ -251,7 +256,9 @@ mod tests {
             ports: vec![3000],
             dashboard: true,
         });
-        assert!(s.contains("dashboard:\n"));
+        // Entry point must be named `traefik` (not `dashboard`) so the
+        // auto-router under `api.insecure: true` actually attaches.
+        assert!(s.contains("  traefik:\n"));
         assert!(s.contains(&format!("address: \":{DASHBOARD_PORT}\"")));
         assert!(s.contains("api:\n"));
     }

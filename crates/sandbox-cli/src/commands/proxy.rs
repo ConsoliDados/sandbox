@@ -65,8 +65,9 @@ async fn start(paths: &Paths, proxy_dir: &std::path::Path, dashboard: bool) -> R
     eprintln!("traefik up. routing: <slug>.sandbox.local:<PORT>");
     if dashboard {
         eprintln!(
-            "dashboard at http://localhost:{} (insecure mode — local only).",
-            sandbox_proxy::DASHBOARD_PORT
+            "dashboard at http://localhost:{port}/dashboard/ \
+             (api at /api/version, insecure mode — local only).",
+            port = sandbox_proxy::DASHBOARD_PORT,
         );
     }
     eprintln!(
