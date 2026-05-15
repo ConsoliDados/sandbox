@@ -91,6 +91,19 @@ sandbox nuke [PROJECT]
     [--yes | -y]          Skip confirmation
 ```
 
+### `scan` (additional flags)
+
+```
+sandbox scan [PATH]
+    [--no-cache]          Bypass cache and re-run motors
+    [--explain]           Print message + remediation under each finding
+    [--format json|table] (default: table)
+    [--with-clamav]       Add the ClamAV motor (requires `sandbox scan --update-db` first)
+    [--update-db]         Refresh the ClamAV signature DB and exit
+```
+
+Exit code 30 when any finding is severity ≥ High; 20 when ClamAV DB volume is missing.
+
 ### `ps`
 
 List sandboxes.

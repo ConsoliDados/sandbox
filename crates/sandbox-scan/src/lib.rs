@@ -3,6 +3,7 @@
 //! See `crates/sandbox-scan/AGENTS.md` for boundaries and conventions.
 
 pub mod cache;
+pub mod clamav;
 pub mod compose;
 pub mod engine;
 pub mod error;

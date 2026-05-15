@@ -4,10 +4,10 @@ Source of truth for "what's done, what's next, where are we." A fresh session sh
 
 ## Current status
 
-**Phase 4a — scan pipeline (YARA + heuristics + compose + cache + pre-flight).** In progress on `feat/phase-4-scan-pipeline`. ClamAV motor split into Phase 4b. Phase 3 merged into `dev` via PR #2 (2026-05-13).
+**Phase 4 — scan pipeline complete (YARA + heuristics + compose + ClamAV).** In progress on `feat/phase-4-scan-pipeline` (PR #3). Phase 3 merged into `dev` via PR #2 (2026-05-13).
 
-`sandbox run/down/nuke/ps/logs/exec/scan` are wired end-to-end against a real Docker daemon. Pre-flight scan runs before `docker run` in safe/paranoid; blocking findings (severity ≥ High) exit 30.
-130 tests pass headlessly (42 core + 14 docker + 62 scan + 6 cli unit + 6 cli integration);
+`sandbox run/down/nuke/ps/logs/exec/scan` are wired end-to-end against a real Docker daemon. Pre-flight scan runs before `docker run` in safe/paranoid (`--with-clamav` adds the AV motor); blocking findings (severity ≥ High) exit 30. Scanner image is built locally on first opt-in; signature DB persists in named volume `sandbox-scanner-db`, refreshed by `sandbox scan --update-db`.
+139 tests pass headlessly (42 core + 17 docker + 68 scan + 6 cli unit + 6 cli integration);
 tests that drive Docker for real are behind the `docker-tests` feature.
 
 ## Phases
@@ -89,10 +89,11 @@ Branch: `feat/lifecycle-mvp`.
 
 ### Phase 4b — ClamAV motor
 
-- [ ] `sandbox/scanner:latest` image (ClamAV + freshclam) — published image
-- [ ] Ephemeral scan container in `sandbox-scan` (named volume `sandbox-scanner-db`)
-- [ ] `sandbox scan --update-db` (bridge network, run freshclam, exit)
-- [ ] ClamAV stage wired after heuristics in the engine pipeline (mandatory in `paranoid`, opt-in in `safe`)
+- [x] `sandbox/scanner:latest` image (alpine + clamav + freshclam) — bundled Dockerfile, built on demand from `crates/sandbox-scan/scanner-image/`
+- [x] Ephemeral scan container in `sandbox-docker::scanner` (named volume `sandbox-scanner-db`)
+- [x] `sandbox scan --update-db` (bridge network, run freshclam, exit)
+- [x] `sandbox-scan::clamav` output parser (clamscan `--no-summary --infected` → Findings, Critical severity)
+- [x] ClamAV stage opt-in via `--with-clamav` on `sandbox scan` and `sandbox run` (profile-driven default deferred to Phase 7)
 
 ### Phase 5 — Reverse proxy + port detection
 

@@ -102,6 +102,13 @@ impl Paths {
     pub fn scan_ignore_file(&self) -> PathBuf {
         self.config.join("scan-ignore.toml")
     }
+
+    /// Working directory for the ephemeral scanner image build context (the
+    /// materialized `Dockerfile`). Lives under XDG_DATA_HOME so it survives
+    /// cache wipes — rebuilding the image is expensive.
+    pub fn scanner_dir(&self) -> PathBuf {
+        self.data.join("scanner")
+    }
 }
 
 #[cfg(test)]

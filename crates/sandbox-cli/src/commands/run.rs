@@ -23,6 +23,7 @@ pub(crate) struct Args {
     pub(crate) unsafe_mode: bool,
     pub(crate) network: bool,
     pub(crate) no_scan: bool,
+    pub(crate) with_clamav: bool,
     pub(crate) print_cmd: bool,
 }
 
@@ -45,7 +46,7 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
         return Ok(());
     }
 
-    pre_flight_scan(&ctx, &args)?;
+    pre_flight_scan(&ctx, &args).await?;
 
     sandbox_docker::ensure_internal(SANDBOX_INTERNAL).await?;
     for vol in ctx.project.named_volumes() {
@@ -59,21 +60,30 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
     Ok(())
 }
 
-/// Run YARA + heuristics + compose against the project before docker run.
-/// Skipped in unsafe mode (the trust boundary is the user's call). Blocks
-/// with exit 30 (`Error::ScanBlocked`) when any finding is severity ≥ High.
-fn pre_flight_scan(ctx: &Context, args: &Args) -> Result<()> {
+/// Run YARA + heuristics + compose (and optionally ClamAV) against the
+/// project before docker run. Skipped in unsafe mode (the trust boundary is
+/// the user's call). Blocks with exit 30 (`Error::ScanBlocked`) when any
+/// finding is severity ≥ High.
+async fn pre_flight_scan(ctx: &Context, args: &Args) -> Result<()> {
     if args.unsafe_mode || args.no_scan {
         tracing::info!("scan skipped (unsafe profile)");
         return Ok(());
     }
+    let short = ctx.project.hash.short().to_string();
     let opts = sandbox_scan::ScanOpts {
         no_cache: false,
         cache_dir: Some(ctx.paths.scan_cache_dir()),
         ignore_file: Some(ctx.paths.scan_ignore_file()),
-        project_hash: Some(ctx.project.hash.short().to_string()),
+        project_hash: Some(short.clone()),
     };
-    let report = sandbox_scan::scan(&ctx.project.path, &opts)?;
+    let mut report = sandbox_scan::scan(&ctx.project.path, &opts)?;
+
+    if args.with_clamav {
+        let clamav = run_clamav_motor(&ctx.project.path, &ctx.paths, &short).await?;
+        report.findings.extend(clamav.items);
+        report.findings.sort_canonical();
+    }
+
     let blocking: Vec<_> = report
         .findings
         .iter()
@@ -111,6 +121,34 @@ fn pre_flight_scan(ctx: &Context, args: &Args) -> Result<()> {
         count: blocking.len(),
         threshold: sandbox_scan::Severity::High.to_string(),
     })
+}
+
+/// Same shape as `commands::scan::run_clamav` — duplicated here to keep the
+/// pre-flight self-contained and avoid pulling `scan` into the run path.
+/// If we add a third caller, refactor into a shared helper.
+async fn run_clamav_motor(
+    project: &std::path::Path,
+    paths: &Paths,
+    project_hash: &str,
+) -> Result<sandbox_scan::Findings> {
+    let scanner_dir = sandbox_scan::clamav::materialize_scanner_dockerfile(&paths.scanner_dir())?;
+    sandbox_docker::ensure_scanner_image(&scanner_dir).await?;
+    if !sandbox_docker::db_volume_exists().await? {
+        return Err(crate::Error::ClamavDbMissing {
+            volume: sandbox_docker::SCANNER_DB_VOLUME.into(),
+        });
+    }
+    let outcome = sandbox_docker::run_clamscan(project).await?;
+    if outcome.is_error() {
+        return Err(crate::Error::ClamavScanFailed {
+            code: outcome.exit_code,
+            stderr: outcome.stderr,
+        });
+    }
+    let mut findings = sandbox_scan::clamav::parse_output(&outcome.stdout);
+    let list = sandbox_scan::IgnoreList::load(&paths.scan_ignore_file())?;
+    list.apply(&mut findings, project_hash);
+    Ok(findings)
 }
 
 struct Context {
