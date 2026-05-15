@@ -29,13 +29,52 @@ pub async fn is_running(name: &ContainerName) -> Result<bool> {
 
 /// Execute the plan via `docker run`. Attaches stdio when interactive+tty so
 /// the user gets a real shell; otherwise captures output for tracing.
+///
+/// When `plan.additional_networks` is non-empty we can't go straight to
+/// `docker run` (which accepts only a single `--network`). Instead we
+/// `docker create` with the primary network, `docker network connect` each
+/// extra one, and then `docker start -ai` to attach. Single-network runs
+/// keep the original direct path.
 pub async fn run(plan: &Plan) -> Result<()> {
-    let args = plan.to_args();
-    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+    if plan.additional_networks.is_empty() {
+        let args = plan.to_args();
+        let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+        return if plan.interactive && plan.tty {
+            run_attached(&argv).await
+        } else {
+            run_capture(&argv).await.map(|_| ())
+        };
+    }
+
+    let mut create_args = plan.to_args();
+    if let Some(first) = create_args.first_mut() {
+        *first = "create".into();
+    }
+    let argv: Vec<&str> = create_args.iter().map(String::as_str).collect();
+    run_capture(&argv).await?;
+
+    for net in &plan.additional_networks {
+        run_capture(&[
+            "network",
+            "connect",
+            net.as_str(),
+            plan.container_name.as_str(),
+        ])
+        .await?;
+    }
+
     if plan.interactive && plan.tty {
-        run_attached(&argv).await
+        run_attached(&[
+            "start",
+            "--interactive",
+            "--attach",
+            plan.container_name.as_str(),
+        ])
+        .await
     } else {
-        run_capture(&argv).await.map(|_| ())
+        run_capture(&["start", "--attach", plan.container_name.as_str()])
+            .await
+            .map(|_| ())
     }
 }
 

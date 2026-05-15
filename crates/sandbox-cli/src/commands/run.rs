@@ -304,10 +304,12 @@ fn build_plan(ctx: &Context) -> Plan {
             cap_drop_all: ctx.profile.cap_drop == "ALL",
             no_new_privileges: ctx.profile.no_new_privileges,
         },
+        additional_networks: vec![],
         resources: ResourceSpec {
             cpus: ctx.profile.cpu,
             memory_mb: ctx.profile.memory_mb,
         },
+        labels: vec![],
         entrypoint: Some(ctx.manifest.shell.clone()),
         command: vec![],
         interactive: true,

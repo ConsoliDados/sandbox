@@ -106,8 +106,18 @@ pub struct Plan {
     pub mounts: Vec<Mount>,
     pub env: Vec<(String, String)>,
     pub network: NetworkSpec,
+    /// Extra Docker networks to attach the container to after creation.
+    /// `docker run --network` accepts only one network, so additional ones
+    /// are joined via `docker network connect` between `create` and `start`
+    /// — see `lifecycle::run`. Used by the reverse proxy to attach project
+    /// containers to `sandbox-proxy` while keeping `sandbox-internal` as
+    /// the primary egress-restricted network.
+    pub additional_networks: Vec<String>,
     pub security: SecuritySpec,
     pub resources: ResourceSpec,
+    /// Docker labels rendered as `--label k=v`. Used by Traefik to register
+    /// the container for routing; empty in non-proxy flows.
+    pub labels: Vec<(String, String)>,
     /// Override the image's ENTRYPOINT. Set to the shell binary so that
     /// images shipping a non-shell entrypoint (e.g. `node:24` runs `node`
     /// by default) still drop the user into an interactive session.
@@ -195,6 +205,11 @@ impl Plan {
                 a.push("--network".into());
                 a.push("none".into());
             }
+        }
+
+        for (k, v) in &self.labels {
+            a.push("--label".into());
+            a.push(format!("{k}={v}"));
         }
 
         if self.security.cap_drop_all {
@@ -285,10 +300,12 @@ mod tests {
                 cap_drop_all: true,
                 no_new_privileges: true,
             },
+            additional_networks: vec![],
             resources: ResourceSpec {
                 cpus: Some(2.0),
                 memory_mb: Some(4096),
             },
+            labels: vec![],
             entrypoint: Some("/bin/bash".into()),
             command: vec![],
             interactive: true,
@@ -347,6 +364,23 @@ mod tests {
     fn args_end_with_image() {
         let args = fixture_plan().to_args();
         assert_eq!(args.last().map(String::as_str), Some("node:24.10.0"));
+    }
+
+    #[test]
+    fn labels_render_as_repeated_label_flag() {
+        let mut plan = fixture_plan();
+        plan.labels.push(("traefik.enable".into(), "true".into()));
+        plan.labels.push((
+            "traefik.http.routers.sb-myproj-3000.rule".into(),
+            "Host(`myproj.sandbox.local`)".into(),
+        ));
+        let args = plan.to_args();
+        assert!(has_pair(&args, "--label", "traefik.enable=true"));
+        assert!(has_pair(
+            &args,
+            "--label",
+            "traefik.http.routers.sb-myproj-3000.rule=Host(`myproj.sandbox.local`)",
+        ));
     }
 
     #[test]
