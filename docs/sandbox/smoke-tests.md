@@ -377,6 +377,150 @@ $SB run /tmp/sb-evil --with-clamav
 
 ---
 
+## Phase 5 — reverse proxy
+
+Hostname model is `<slug>.sandbox.local:<PORT>` per ADR-0005. Each port the
+project exposes becomes a Traefik entryPoint that binds on the host; the
+project container joins both `sandbox-internal` (egress-restricted) and
+`sandbox-proxy` (Traefik routing). One-time host setup, then the proxy
+itself is opt-in via `sandbox proxy start`.
+
+### One-time host setup (`*.sandbox.local` resolution)
+
+Pick one of:
+
+```sh
+# /etc/hosts — simplest, but requires editing for every new project slug:
+echo "127.0.0.1   myproj.sandbox.local" | sudo tee -a /etc/hosts
+
+# OR a real wildcard via dnsmasq (recommended for repeat use):
+echo "address=/sandbox.local/127.0.0.1" | sudo tee /etc/dnsmasq.d/sandbox.conf
+sudo systemctl restart dnsmasq
+```
+
+Without one of these, `curl myproj.sandbox.local:3000` resolves nowhere and
+the proxy looks broken.
+
+### 5.1 Headless: port detection from `.env` + source regex
+
+```sh
+mkdir -p /tmp/sb-ports && cat > /tmp/sb-ports/package.json <<'EOF'
+{"name":"itest","scripts":{}}
+EOF
+echo 'PORT=5007' > /tmp/sb-ports/.env
+cat > /tmp/sb-ports/server.js <<'EOF'
+const app = require('express')();
+app.listen(3000);
+EOF
+
+$SB --print-cmd run /tmp/sb-ports
+```
+
+Expect the `docker run …` invocation to carry both ports:
+
+- `--label traefik.enable=true`
+- `--label traefik.http.routers.sb-sb-ports-3000.rule=Host(\`sb-ports.sandbox.local\`)`
+- `--label traefik.http.routers.sb-sb-ports-5007.rule=Host(\`sb-ports.sandbox.local\`)`
+- plus the `loadbalancer.server.port` labels for each.
+
+The `--print-cmd` output shows only the primary `--network sandbox-internal`;
+the second network (`sandbox-proxy`) is attached at runtime via
+`docker network connect` because `docker run --network` accepts only one
+network. See `lifecycle::run` in `sandbox-docker`.
+
+### 5.2 Headless: `--expose` overrides detection
+
+```sh
+$SB --print-cmd run /tmp/sb-ports --expose 8080 --expose 9090
+```
+
+Expect only `port-8080` and `port-9090` in the labels; the auto-detected
+3000/5007 are ignored when the CLI passes overrides.
+
+### 5.3 Headless: no detection + no override = no proxy labels
+
+```sh
+mkdir -p /tmp/sb-noport && echo '{"name":"x"}' > /tmp/sb-noport/package.json
+$SB --print-cmd run /tmp/sb-noport | grep -c traefik || true
+# → if the manifest has `default_port` (node does, 3000), one Host rule
+#   appears anyway because detection falls through to that default. Override
+#   with --expose 0 (or remove `default_port` from a custom manifest) to
+#   produce a label-free run.
+```
+
+### 5.4 Live: bring the proxy up (no projects)
+
+```sh
+$SB proxy start --dashboard
+$SB proxy status
+# → traefik service listed under `sandbox-proxy` compose project;
+# → state: running
+
+curl -s http://localhost:8090/api/version
+# → JSON with version: "3.1.x"
+```
+
+Generated artifacts at `~/.local/share/sandbox/proxy/`:
+- `traefik.yaml` (static config with the entryPoints and docker provider)
+- `docker-compose.yml` (Traefik service definition)
+
+### 5.5 Live: full round-trip on a real express project
+
+```sh
+mkdir -p /tmp/sb-web && cat > /tmp/sb-web/package.json <<'EOF'
+{"name":"sb-web","dependencies":{"express":"^4.19.0"}}
+EOF
+cat > /tmp/sb-web/server.js <<'EOF'
+const express = require('express');
+const app = express();
+app.get('/', (_req, res) => res.send('hello from sandbox\n'));
+app.listen(3000);
+EOF
+echo "127.0.0.1   sb-web.sandbox.local" | sudo tee -a /etc/hosts
+
+$SB run /tmp/sb-web --network --expose 3000   # --network for npm install
+# inside the container:
+npm install express
+node server.js &
+exit                                          # background-and-exit pattern
+
+$SB proxy start                               # registers port 3000
+curl http://sb-web.sandbox.local:3000/
+# → hello from sandbox
+```
+
+`--network` is needed once for `npm install` (egress); subsequent runs
+without it stay isolated. The `node server.js &` keeps the process alive
+after `exit` because the container is configured `keepalive=false` for
+v0.1 — restart with `$SB run /tmp/sb-web` to re-enter, or wait for the
+`entrypoint_keepalive` manifest field (future phase).
+
+### 5.6 Live: stop / status / logs
+
+```sh
+$SB proxy logs --follow      # streams Traefik logs; Ctrl-C to detach
+$SB proxy stop               # docker compose down
+$SB proxy status             # state: stopped
+```
+
+Stopping the proxy doesn't remove the project containers — they keep
+running, just unreachable via `<slug>.sandbox.local:<PORT>` until the proxy
+comes back up. `sandbox run` continues to work the same way (labels are
+inert when nothing reads them).
+
+### Cleanup
+
+```sh
+$SB proxy stop
+$SB nuke /tmp/sb-web -y
+$SB nuke /tmp/sb-ports -y
+rm -rf /tmp/sb-web /tmp/sb-ports /tmp/sb-noport
+docker network rm sandbox-proxy   # optional; auto-recreated next start
+sudo sed -i '/sandbox\.local/d' /etc/hosts   # if you used /etc/hosts
+```
+
+---
+
 ## Cleanup checklist
 
 After running Live recipes, anything you `sandbox run` lives in Docker. Clean up:

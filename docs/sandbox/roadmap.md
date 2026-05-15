@@ -4,10 +4,10 @@ Source of truth for "what's done, what's next, where are we." A fresh session sh
 
 ## Current status
 
-**Phase 4 — scan pipeline complete (YARA + heuristics + compose + ClamAV).** In progress on `feat/phase-4-scan-pipeline` (PR #3). Phase 3 merged into `dev` via PR #2 (2026-05-13).
+**Phase 5 — reverse proxy.** In progress on `feat/phase-5-reverse-proxy`. Phase 4 merged into `dev` via PR #3 (2026-05-15).
 
-`sandbox run/down/nuke/ps/logs/exec/scan` are wired end-to-end against a real Docker daemon. Pre-flight scan runs before `docker run` in safe/paranoid (`--with-clamav` adds the AV motor); blocking findings (severity ≥ High) exit 30. Scanner image is built locally on first opt-in; signature DB persists in named volume `sandbox-scanner-db`, refreshed by `sandbox scan --update-db`.
-139 tests pass headlessly (42 core + 17 docker + 68 scan + 6 cli unit + 6 cli integration);
+`sandbox run/down/nuke/ps/logs/exec/scan/proxy` are wired end-to-end against a real Docker daemon. Pre-flight scan runs before `docker run` in safe/paranoid (`--with-clamav` adds the AV motor); blocking findings (severity ≥ High) exit 30. `sandbox proxy start` brings up Traefik with one entryPoint per registered port; project containers join both `sandbox-internal` (egress restricted) and `sandbox-proxy` (Traefik routing). Reachable via `<slug>.sandbox.local:<PORT>` after a one-time `/etc/hosts` or dnsmasq setup.
+172 tests pass headlessly (42 core + 18 docker + 68 scan + 32 proxy + 6 cli unit + 6 cli integration);
 tests that drive Docker for real are behind the `docker-tests` feature.
 
 ## Phases
@@ -97,12 +97,14 @@ Branch: `feat/lifecycle-mvp`.
 
 ### Phase 5 — Reverse proxy + port detection
 
-- [ ] `sandbox-proxy::traefik` (compose template + label generation)
-- [ ] `sandbox proxy start|stop|status` subcommand
-- [ ] Port auto-detection: `.env` parser + regex over source for `app.listen(N)`, `PORT=`, `bind = "0.0.0.0:N"`
-- [ ] `--expose PORT[:NAME]` flag wires labels
-- [ ] `*.sandbox.local` documentation (user adds to `/etc/hosts` or dnsmasq)
-- [ ] ADR-0005 (Traefik) finalized
+- [x] `sandbox-proxy::traefik` (compose + static config + lifecycle ops)
+- [x] `sandbox-proxy::labels` (Traefik label generation per ADR-0005)
+- [x] `sandbox-proxy::ports` (port detection: `.env` + regex source + manifest fallback)
+- [x] `sandbox proxy start|stop|status|logs` subcommand
+- [x] `--expose PORT` flag (repeatable) — short-circuits detection
+- [x] `Plan.labels` + `Plan.additional_networks` + `lifecycle::run` create+connect+start path
+- [x] `*.sandbox.local` host setup documented in `docs/sandbox/smoke-tests.md` § Phase 5
+- [x] ADR-0005 (Traefik) Accepted (port-distinguishes-services model)
 
 ### Phase 6 — Runtime network toggle + project compose
 
