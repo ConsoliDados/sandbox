@@ -32,6 +32,21 @@ pub(crate) enum Error {
     #[error("sandbox container `{name}` is not running (run `sandbox run` first)")]
     ContainerNotRunning { name: String },
 
+    #[error("scan blocked: {count} finding(s) at severity ≥ {threshold}")]
+    ScanBlocked { count: usize, threshold: String },
+
+    #[error("--no-scan requires --unsafe (the scan cannot be skipped in safe/paranoid mode)")]
+    NoScanRequiresUnsafe,
+
+    #[error(
+        "ClamAV signature DB not initialized — run `sandbox scan --update-db` first \
+         (volume: {volume})"
+    )]
+    ClamavDbMissing { volume: String },
+
+    #[error("ClamAV scan failed (exit {code}): {stderr}")]
+    ClamavScanFailed { code: i32, stderr: String },
+
     #[error("not implemented yet (Phase 0 skeleton); see roadmap")]
     NotImplemented,
 }
@@ -43,6 +58,8 @@ impl Error {
         match self {
             Error::Clap(_) => 2,
             Error::ContainerNotFound { .. } | Error::ContainerNotRunning { .. } => 40,
+            Error::ScanBlocked { .. } | Error::ClamavScanFailed { .. } => 30,
+            Error::ClamavDbMissing { .. } => 20,
             _ => 1,
         }
     }

@@ -40,9 +40,10 @@ In order:
 3. [`docs/sandbox/sad.md`](docs/sandbox/sad.md) — crate boundaries, dataflow, key abstractions
 4. [`docs/sandbox/playbook.md`](docs/sandbox/playbook.md) — coding conventions
 5. [`docs/sandbox/roadmap.md`](docs/sandbox/roadmap.md) — current phase + what's next
-6. The crate-level `AGENTS.md` of whatever you're working on
-7. [`docs/sandbox/adrs/`](docs/sandbox/adrs/) when touching cross-cutting decisions
-8. [`docs/sandbox/open-questions.md`](docs/sandbox/open-questions.md) — unresolved stuff
+6. [`docs/sandbox/smoke-tests.md`](docs/sandbox/smoke-tests.md) — copy-paste recipes to verify every shipped feature; the canonical answer to "does X work?"
+7. The crate-level `AGENTS.md` of whatever you're working on
+8. [`docs/sandbox/adrs/`](docs/sandbox/adrs/) when touching cross-cutting decisions
+9. [`docs/sandbox/open-questions.md`](docs/sandbox/open-questions.md) — unresolved stuff
 
 ## Conventions (high level)
 
@@ -75,9 +76,10 @@ Each crate owns its own conventions for its domain. When working inside `crates/
 | Task | What to touch |
 |---|---|
 | Add a language stack | Drop `languages/<name>.toml`. No code change. |
-| Add a scan rule | `crates/sandbox-scan/rules/` (YARA) or `crates/sandbox-scan/src/heuristics/` (regex). Add tests. |
-| Add a subcommand | `crates/sandbox-cli/src/commands/<name>.rs` + register in `commands/mod.rs` + update `docs/sandbox/srs.md`. |
+| Add a scan rule | `crates/sandbox-scan/src/yara/rules/` (YARA) or `crates/sandbox-scan/src/heuristics/` (regex) or `crates/sandbox-scan/src/compose/rules.rs` (compose). Add fixtures + recipe in `docs/sandbox/smoke-tests.md`. Bump `RULESET_VERSION` in `cache.rs` so cached scans re-evaluate. |
+| Add a subcommand | `crates/sandbox-cli/src/commands/<name>.rs` + register in `commands/mod.rs` + update `docs/sandbox/srs.md` + add a recipe in `docs/sandbox/smoke-tests.md`. |
 | Change Docker behavior | `crates/sandbox-docker/`. Document deviation from previous via ADR if user-visible. |
 | Change network/security defaults | Requires ADR. Update `docs/sandbox/threat-model.md`. |
+| Add an exit code | Update `docs/sandbox/srs.md` § Global, `cli::Error::exit_code()`, and add a smoke recipe asserting it. |
 
 

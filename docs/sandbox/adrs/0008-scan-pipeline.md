@@ -1,8 +1,8 @@
 # ADR-0008 — Scan pipeline: YARA → heuristics → ClamAV (deferred LLM)
 
-- **Status:** Draft
-- **Date:** 2026-05-07
-- **Phase:** 4
+- **Status:** Accepted
+- **Date:** 2026-05-07 (drafted); 2026-05-13 (accepted, Phase 4a kickoff)
+- **Phase:** 4 — implemented in slices 4a (YARA + heuristics + compose + cache + suppression + CLI) and 4b (ClamAV ephemeral container + `--update-db`).
 
 ## Context
 
@@ -29,7 +29,7 @@ YARA  ─►  heuristics (regex/AST)  ─►  ClamAV  ─►  verdict
 
 ### Motor placement
 
-- **YARA** runs in-process inside the `sandbox-scan` crate (via `yara-rust` bindings). Rules live in `crates/sandbox-scan/rules/` and `~/.config/sandbox/scan-rules/`.
+- **YARA** runs in-process inside the `sandbox-scan` crate via [`yara-x`](https://crates.io/crates/yara-x) — a pure-Rust YARA implementation maintained by VirusTotal, no `libyara` C dependency. Rules live in `crates/sandbox-scan/rules/` (bundled via `include_str!`) and `~/.config/sandbox/scan-rules/` (user-added, loaded at startup).
 - **Heuristics** are pure Rust — regex first; AST-aware checks for shapes that benefit from it (e.g. `Function.constructor` calls in JS).
 - **ClamAV** runs **inside an ephemeral scan container**, never on the host and never inside the project container.
   - Image: `sandbox/scanner:latest` (built and published by the project; pulled-on-first-use).
@@ -81,8 +81,13 @@ Negative / open:
 
 - **First scan downloads an image.** `sandbox/scanner:latest` is pulled on first use; the user sees a one-time delay. Mitigation: `sandbox scan --warmup` (or document `docker pull` upfront).
 - **Signature freshness** is the user's responsibility (`--update-db`). Stale signatures = missed detections. Mitigation: the scan output prints the DB age and warns if older than 30 days.
-- **Suppression UX** (false positives) — see OQ-007 (project-local vs. user-global suppression keys). Decide before this ADR is accepted.
+- **Suppression UX** (false positives) — resolved in OQ-007 (2026-05-13): user-global only, at `~/.config/sandbox/scan-ignore.toml`, keyed by `(rule_id, project_hash)`. Rationale: a malicious project could plant a project-local suppression file to silence a real detection — exactly the threat model we exist to defeat. User-global keeps the trust boundary at the host.
 - **Compose validation** (T6 in threat model) is a separate scan path that runs against `docker-compose.yml`. Lives in `sandbox-scan` but is not part of this three-motor pipeline. Documented in a follow-up ADR if it grows.
+
+### Phase split
+
+- **Phase 4a** (this PR): YARA via `yara-x`, heuristics, compose validator, content-hashed cache, user-global suppression, `sandbox scan [PATH]`, pre-flight scan integrated into `run` (exit 30 on blocking finding).
+- **Phase 4b** (separate PR): ClamAV ephemeral scan container (`sandbox/scanner:latest`), `sandbox scan --update-db`, `sandbox-scanner-db` named volume. Punted because the scanner image is a separate publish/distribution problem and the YARA+heuristics layer is what addresses the original incident (Contagious Interview / Lazarus).
 
 ## References
 

@@ -45,15 +45,26 @@ User asked for an addendum: when going OSS, support bash and fish in addition to
 
 Defer to post-v0.1.
 
-### OQ-007 — How to express "I want this scan rule to ignore this finding here" (2026-05-06)
-
-Suppression file in the project (`.sandbox-scan-ignore.toml`) with rule_id + path? Risky — malware would plant it.
-
-Better: suppression in user-global config, keyed by `(rule_id, project_hash)`. Survives source changes within reason.
-
-Decide in Phase 4.
-
 ## Resolved
+
+### OQ-007 — Scan suppression syntax (Resolved 2026-05-13, Phase 4a)
+
+**Decision:** Suppression lives only in user-global config at `~/.config/sandbox/scan-ignore.toml`. Schema:
+
+```toml
+[[ignore]]
+rule_id = "contagious_interview/function_constructor_eval"
+project_hash = "66284ee5a7c4"  # the short hash from `sandbox ps`
+note = "false positive on plugin loader, audited 2026-05-13"
+```
+
+The engine drops any `Finding` whose `(rule_id, project_hash)` matches an entry.
+
+**Rationale:** project-local ignore files are a footgun — a malicious repo would ship one to silence the very detection that would catch it. Keeping suppression in `~/.config` puts the trust boundary at the host user, not inside the sandbox.
+
+**Tradeoffs:**
+- Per-machine, not per-repo. A team can't commit suppressions. Acceptable for v0.1 — the use case (recruiter take-homes, untrusted client repos) is single-developer review.
+- Suppression survives source changes within a project_hash. If the project's canonical path changes, the hash changes and stale suppressions become dead entries (we don't garbage-collect them yet; tracked for later).
 
 ### OQ-004 — Default UID for container user (Resolved 2026-05-06, Phase 1)
 

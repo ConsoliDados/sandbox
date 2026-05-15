@@ -56,6 +56,14 @@ enum Command {
         /// Allow internet egress
         #[arg(long)]
         network: bool,
+
+        /// Skip the pre-flight security scan (requires --unsafe)
+        #[arg(long = "no-scan")]
+        no_scan: bool,
+
+        /// Add the ClamAV motor to the pre-flight scan (requires `sandbox scan --update-db` first)
+        #[arg(long = "with-clamav")]
+        with_clamav: bool,
     },
     /// Stop a sandbox container; keep state
     Down {
@@ -120,10 +128,26 @@ enum Command {
         #[command(subcommand)]
         op: NetOp,
     },
-    /// Run security scan without launching a container (Phase 4)
+    /// Run security scan without launching a container
     Scan {
+        /// Project path (defaults to current directory)
         #[arg(default_value = ".")]
         path: std::path::PathBuf,
+        /// Bypass the cache and rerun every motor
+        #[arg(long)]
+        no_cache: bool,
+        /// Print message + remediation under each finding
+        #[arg(long)]
+        explain: bool,
+        /// Output format
+        #[arg(long, value_enum, default_value_t = commands::scan::Format::Table)]
+        format: commands::scan::Format,
+        /// Run the ClamAV motor on top of YARA + heuristics + compose
+        #[arg(long = "with-clamav")]
+        with_clamav: bool,
+        /// Refresh the ClamAV signature DB and exit (ignores PATH and other flags)
+        #[arg(long = "update-db", conflicts_with_all = ["no_cache", "explain", "with_clamav"])]
+        update_db: bool,
     },
     /// Manage language manifests (Phase 3)
     Lang,
@@ -170,6 +194,8 @@ async fn dispatch(cli: Cli) -> Result<()> {
             profile,
             unsafe_mode,
             network,
+            no_scan,
+            with_clamav,
         }) => {
             commands::run::execute(commands::run::Args {
                 path,
@@ -177,6 +203,8 @@ async fn dispatch(cli: Cli) -> Result<()> {
                 profile,
                 unsafe_mode,
                 network,
+                no_scan,
+                with_clamav,
                 print_cmd: cli.print_cmd,
             })
             .await
@@ -235,6 +263,24 @@ async fn dispatch(cli: Cli) -> Result<()> {
                 user,
                 workdir,
                 print_cmd: cli.print_cmd,
+            })
+            .await
+        }
+        Some(Command::Scan {
+            path,
+            no_cache,
+            explain,
+            format,
+            with_clamav,
+            update_db,
+        }) => {
+            commands::scan::execute(commands::scan::Args {
+                path,
+                no_cache,
+                explain,
+                format,
+                with_clamav,
+                update_db,
             })
             .await
         }
