@@ -64,6 +64,12 @@ enum Command {
         /// Add the ClamAV motor to the pre-flight scan (requires `sandbox scan --update-db` first)
         #[arg(long = "with-clamav")]
         with_clamav: bool,
+
+        /// Override port detection for the reverse proxy. Repeat to expose
+        /// multiple ports: `--expose 3000 --expose 5007`. When omitted, the
+        /// language manifest's `port_detection` rules run.
+        #[arg(long, value_name = "PORT")]
+        expose: Vec<u16>,
     },
     /// Stop a sandbox container; keep state
     Down {
@@ -151,8 +157,11 @@ enum Command {
     },
     /// Manage language manifests (Phase 3)
     Lang,
-    /// Control reverse proxy sidecar (Phase 5)
-    Proxy,
+    /// Control the Traefik reverse proxy sidecar
+    Proxy {
+        #[command(subcommand)]
+        op: ProxyOp,
+    },
     /// Edit or show config (Phase 3)
     Config,
 }
@@ -162,6 +171,25 @@ enum NetOp {
     On { project: String },
     Off { project: String },
     Status { project: String },
+}
+
+#[derive(Subcommand, Debug)]
+enum ProxyOp {
+    /// Render compose+config and bring the Traefik sidecar up
+    Start {
+        /// Enable the Traefik dashboard (port 8090)
+        #[arg(long)]
+        dashboard: bool,
+    },
+    /// Stop the Traefik sidecar (keeps generated config)
+    Stop,
+    /// Print sidecar status (docker compose ps)
+    Status,
+    /// Tail sidecar logs
+    Logs {
+        #[arg(short, long)]
+        follow: bool,
+    },
 }
 
 fn main() {
@@ -196,6 +224,7 @@ async fn dispatch(cli: Cli) -> Result<()> {
             network,
             no_scan,
             with_clamav,
+            expose,
         }) => {
             commands::run::execute(commands::run::Args {
                 path,
@@ -205,6 +234,7 @@ async fn dispatch(cli: Cli) -> Result<()> {
                 network,
                 no_scan,
                 with_clamav,
+                expose,
                 print_cmd: cli.print_cmd,
             })
             .await
@@ -266,6 +296,7 @@ async fn dispatch(cli: Cli) -> Result<()> {
             })
             .await
         }
+        Some(Command::Proxy { op }) => commands::proxy::execute(op.into()).await,
         Some(Command::Scan {
             path,
             no_cache,

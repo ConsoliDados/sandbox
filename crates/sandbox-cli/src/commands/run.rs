@@ -24,6 +24,9 @@ pub(crate) struct Args {
     pub(crate) network: bool,
     pub(crate) no_scan: bool,
     pub(crate) with_clamav: bool,
+    /// Override port detection: each value becomes a Traefik entryPoint.
+    /// When empty we run the manifest's `port_detection` heuristics.
+    pub(crate) expose: Vec<u16>,
     pub(crate) print_cmd: bool,
 }
 
@@ -49,6 +52,14 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
     pre_flight_scan(&ctx, &args).await?;
 
     sandbox_docker::ensure_internal(SANDBOX_INTERNAL).await?;
+    if !ctx.ports.is_empty() {
+        // Project asked to be reachable through the proxy. The network is
+        // created here (idempotent) so `docker network connect` later in
+        // `lifecycle::run` can't fail with "network not found" when the
+        // user hasn't run `sandbox proxy start` yet. The proxy itself is
+        // still opt-in — the labels are inert until Traefik comes up.
+        sandbox_docker::ensure_bridge(sandbox_proxy::PROXY_NETWORK).await?;
+    }
     for vol in ctx.project.named_volumes() {
         sandbox_docker::ensure_volume(vol.as_str()).await?;
     }
@@ -161,6 +172,13 @@ struct Context {
     /// (lockfile basename, host seed path). Empty when `unsafe_mode` is on or
     /// the manifest declares no lockfiles. See ADR-0003.
     lockfile_seeds: Vec<(String, PathBuf)>,
+    /// Resolved ports (CLI overrides ∪ manifest-driven detection). Empty
+    /// vec means the project doesn't request proxy routing; non-empty
+    /// triggers Traefik labels + a second network on the Plan.
+    ports: Vec<u16>,
+    /// User-facing project slug used as the Host component of
+    /// `<slug>.sandbox.local`. Derived from the canonical project path.
+    slug: String,
 }
 
 impl Context {
@@ -194,6 +212,8 @@ impl Context {
         let user = UserSpec::current()?;
         let dotfiles = dotfiles::discover(&paths);
         let lockfile_seeds = lockfile_seed_paths(&paths, &project, &profile);
+        let ports = sandbox_proxy::detect_ports(&project.path, &manifest, &args.expose)?;
+        let slug = sandbox_proxy::slug_from_path(&project.path);
         Ok(Self {
             paths,
             project,
@@ -202,6 +222,8 @@ impl Context {
             user,
             dotfiles,
             lockfile_seeds,
+            ports,
+            slug,
         })
     }
 }
@@ -288,6 +310,14 @@ fn ensure_host_mountpoints(ctx: &Context) -> Result<()> {
 
 fn build_plan(ctx: &Context) -> Plan {
     let mounts = build_mounts(ctx);
+    let (labels, additional_networks) = if ctx.ports.is_empty() {
+        (Vec::new(), Vec::new())
+    } else {
+        (
+            sandbox_proxy::labels_for_project(&ctx.slug, &ctx.ports, sandbox_proxy::DEFAULT_DOMAIN),
+            vec![sandbox_proxy::PROXY_NETWORK.to_string()],
+        )
+    };
     Plan {
         image: ctx.manifest.image.clone(),
         container_name: ctx.project.container_name.clone(),
@@ -304,12 +334,12 @@ fn build_plan(ctx: &Context) -> Plan {
             cap_drop_all: ctx.profile.cap_drop == "ALL",
             no_new_privileges: ctx.profile.no_new_privileges,
         },
-        additional_networks: vec![],
+        additional_networks,
         resources: ResourceSpec {
             cpus: ctx.profile.cpu,
             memory_mb: ctx.profile.memory_mb,
         },
-        labels: vec![],
+        labels,
         entrypoint: Some(ctx.manifest.shell.clone()),
         command: vec![],
         interactive: true,
@@ -442,6 +472,7 @@ fn save_state(ctx: &Context) -> Result<()> {
             .iter()
             .map(|(name, _)| name.clone())
             .collect(),
+        ports: ctx.ports.clone(),
     };
     meta.save(&state_dir)?;
     Ok(())

@@ -9,6 +9,7 @@ pub(crate) mod down;
 pub(crate) mod exec;
 pub(crate) mod logs;
 pub(crate) mod nuke;
+pub(crate) mod proxy;
 pub(crate) mod ps;
 pub(crate) mod run;
 pub(crate) mod scan;

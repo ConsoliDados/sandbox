@@ -16,6 +16,17 @@ pub async fn ensure_internal(name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Create `name` as a regular (egress-allowed) bridge network if missing.
+/// Used by the reverse proxy: Traefik needs to reach project containers
+/// **and** host packets routed in, so this network must not be `--internal`.
+pub async fn ensure_bridge(name: &str) -> Result<()> {
+    if exists(name).await? {
+        return Ok(());
+    }
+    run_capture(&["network", "create", name]).await?;
+    Ok(())
+}
+
 pub async fn exists(name: &str) -> Result<bool> {
     let probe = run_probe(&["network", "inspect", name]).await?;
     Ok(probe.success)

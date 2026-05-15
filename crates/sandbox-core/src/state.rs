@@ -31,6 +31,13 @@ pub struct Meta {
     /// last ran under `unsafe` or has no lockfiles. See ADR-0003.
     #[serde(default)]
     pub lockfiles: Vec<String>,
+
+    /// Host ports the project asked to expose through the reverse proxy
+    /// (Phase 5). Source: CLI `--expose` overrides ∪ manifest-driven
+    /// auto-detection. Read by `sandbox proxy start` to render Traefik
+    /// entryPoints. Empty when the project has never opted in.
+    #[serde(default)]
+    pub ports: Vec<u16>,
 }
 
 impl Meta {
@@ -123,6 +130,7 @@ mod tests {
             last_run_at: None,
             named_volumes: vec!["sandbox-abcdef012345-target".to_string()],
             lockfiles: vec!["Cargo.lock".to_string()],
+            ports: vec![],
         }
     }
 

@@ -22,7 +22,7 @@ pub use lifecycle::{
     ContainerInfo, ExecOpts, LogsOpts, exec, exists, is_running, list_sandboxes,
     list_sandboxes_args, logs, logs_args, rm, run, start, stop,
 };
-pub use network::{SANDBOX_INTERNAL, connect, disconnect, ensure_internal};
+pub use network::{SANDBOX_INTERNAL, connect, disconnect, ensure_bridge, ensure_internal};
 pub use plan::{Mount, NetworkSpec, Plan, ResourceSpec, SecuritySpec, UserSpec};
 pub use scanner::{
     ClamavOutcome, SCANNER_DB_VOLUME, SCANNER_IMAGE, build_image as build_scanner_image,
