@@ -20,9 +20,9 @@ ADRs capture decisions that have lasting structural consequences. They are short
 | 0005 | Reverse proxy via Traefik sidecar | Accepted | Phase 5 |
 | 0006 | Language manifests as TOML (with future YAML opt-in) | Accepted | Phase 1 |
 | 0007 | State storage follows XDG Base Directory spec | Accepted | Phase 1 |
-| 0008 | Scan pipeline: YARA → heuristics → (deferred) LLM | Draft | Phase 4 |
+| 0008 | Scan pipeline: YARA → heuristics → ClamAV → (deferred) LLM | Accepted | Phase 4 |
 | 0009 | Container reuse semantics for `run` / `down` / `nuke` | Accepted | Phase 1 |
-| 0010 | Project compose deps: detect, validate, integrate as sibling network | Draft | Phase 6 |
+| 0010 | Project compose deps: `--with-deps`, three networks, egress mirrors profile | Accepted | Phase 6 |
 | 0011 | Typed errors throughout (no anyhow) | Accepted | Phase 1 |
 
 ## Template
