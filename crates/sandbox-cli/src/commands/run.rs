@@ -229,7 +229,7 @@ impl Context {
 
         let user = UserSpec::current()?;
         let dotfiles = dotfiles::discover(&paths);
-        let lockfile_seeds = lockfile_seed_paths(&paths, &project, &profile);
+        let lockfile_seeds = lockfile_seed_paths(&paths, &project, &manifest, &profile);
         let ports = sandbox_proxy::detect_ports(&project.path, &manifest, &args.expose)?;
         let slug = sandbox_proxy::slug_from_path(&project.path);
         Ok(Self {
@@ -253,23 +253,31 @@ impl Context {
 /// declared lockfile is mapped to a writable file under the per-project state
 /// dir, which we'll bind on top of `/app/<name>`.
 ///
-/// We filter to lockfiles that already exist on the host source **or** have
-/// already been seeded in the state dir. Skipping the others avoids a Docker
-/// failure mode: with `/app` mounted `:ro`, the daemon cannot create a missing
-/// `/app/<lockfile>` mountpoint inside the read-only filesystem. A lockfile
-/// the user hasn't created yet simply doesn't get bound; package managers
-/// that need to *create* one must run under `--unsafe` (or the user can
-/// `touch` it on the host first). See ADR-0003 § Lockfile mount mechanics.
+/// Selection rules:
+///
+/// 1. Every manifest-declared lockfile that already exists on the host
+///    source **or** in the state dir is bound (the common case once the
+///    project has been initialized).
+/// 2. If after rule 1 the result is empty, fall back to the manifest's
+///    `primary_lock_file` so a fresh project can still let its package
+///    manager *create* a real lockfile on first run. `seed_lockfiles`
+///    later touches an empty stub on the host so Docker can mount over it
+///    inside the `/app:ro` bind (mount-on-RO doesn't allow `mkdirat`).
+///    Without this, `npm install` on a fresh project hits EROFS — exactly
+///    the issue Phase 5 smoke surfaced.
+///
+/// See ADR-0003 § Lockfile mount mechanics.
 fn lockfile_seed_paths(
     paths: &Paths,
     project: &Project,
+    manifest: &LangManifest,
     profile: &Profile,
 ) -> Vec<(String, PathBuf)> {
     if profile.unsafe_mode {
         return Vec::new();
     }
     let dir = paths.lockfiles_dir(&project.hash.short());
-    project
+    let mut seeds: Vec<(String, PathBuf)> = project
         .lock_files
         .iter()
         .filter(|name| {
@@ -278,13 +286,26 @@ fn lockfile_seed_paths(
             seed.is_file() || host.is_file()
         })
         .map(|name| (name.clone(), dir.join(name)))
-        .collect()
+        .collect();
+    if seeds.is_empty()
+        && let Some(primary) = manifest.primary_lock()
+    {
+        seeds.push((primary.to_string(), dir.join(primary)));
+    }
+    seeds
 }
 
 /// Create the lockfiles seed dir and ensure each filtered lockfile exists as a
 /// regular file under the state dir so Docker performs a file bind. On first
 /// sight we copy the project's current lockfile from the host; subsequent runs
 /// preserve the seed (state-dir is the source of truth in safe/paranoid).
+///
+/// When the manifest's `primary_lock_file` falls through (no lockfile on host
+/// AND no seed yet), this function ALSO touches an empty stub on the host
+/// — Docker cannot create the mountpoint file inside the `/app:ro` bind, so
+/// the bind target must already exist on the source side. The stub is empty
+/// (zero bytes); the real lockfile contents live in the state-dir bind and
+/// get written there by the in-container package manager.
 fn seed_lockfiles(ctx: &Context) -> Result<()> {
     if ctx.lockfile_seeds.is_empty() {
         return Ok(());
@@ -292,12 +313,20 @@ fn seed_lockfiles(ctx: &Context) -> Result<()> {
     let dir = ctx.paths.lockfiles_dir(&ctx.project.hash.short());
     std::fs::create_dir_all(&dir)?;
     for (name, seed) in &ctx.lockfile_seeds {
+        let host_source = ctx.project.path.join(name);
+        if !host_source.is_file() {
+            // Primary-lock fallback path. Touch an empty file on the host so
+            // the `:ro` bind has a mountpoint, log loudly so the user knows
+            // we wrote into their tree.
+            tracing::info!(
+                path = %host_source.display(),
+                "touching empty primary lockfile on host (mount-on-RO requires the target to exist)"
+            );
+            std::fs::File::create(&host_source)?;
+        }
         if seed.exists() {
             continue;
         }
-        let host_source = ctx.project.path.join(name);
-        // lockfile_seed_paths only yields entries with a present host file or
-        // a present seed; if we reach here, the host file must exist.
         std::fs::copy(&host_source, seed)?;
     }
     Ok(())

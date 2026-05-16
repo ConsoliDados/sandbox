@@ -508,6 +508,21 @@ after `exit` because the container is configured `keepalive=false` for
 v0.1 — restart with `$SB run /tmp/sb-web` to re-enter, or wait for the
 `entrypoint_keepalive` manifest field (future phase).
 
+**Two install footguns to know about:**
+
+- *`npm i` on a project with no lockfile*: works. The manifest's
+  `primary_lock_file` (`package-lock.json` for node, `bun.lock` for bun,
+  `Cargo.lock` for rust) gets an empty stub touched on the host so Docker
+  can mount-on-RO; npm then writes the real lockfile into the state-dir
+  bind. The host file stays empty until `sandbox sync-lock` (Phase 6+)
+  copies it back.
+
+- *`npm install <new-package>` in safe mode*: fails with `EROFS` against
+  `package.json`. Adding a dependency mutates the source itself, which the
+  RO bind blocks by design. Either edit `package.json` on the host and
+  then `npm i` inside (lockfile-only update works), or run with
+  `--unsafe` for that session if you've audited the project.
+
 **If `npm install` fails with `EACCES`** on a project created before the
 chown fix landed, the existing named volumes are still root-owned. Reset:
 

@@ -5,6 +5,7 @@ detect = ["Cargo.toml"]
 priority = 20
 package_dirs = ["target", ".cargo"]
 lock_files = ["Cargo.lock"]
+primary_lock_file = "Cargo.lock"
 default_port = 8080
 extra_packages = ["zsh", "git", "starship"]
 shell = "/bin/bash"

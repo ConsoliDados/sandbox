@@ -86,7 +86,7 @@ fn print_cmd_unsafe_relaxes_source_and_network() -> TestResult {
 }
 
 #[test]
-fn print_cmd_safe_skips_lockfiles_absent_from_host() -> TestResult {
+fn print_cmd_safe_falls_back_to_primary_lockfile_when_host_empty() -> TestResult {
     let tmp = tempfile::tempdir()?;
     make_node_project(tmp.path())?;
 
@@ -97,13 +97,22 @@ fn print_cmd_safe_skips_lockfiles_absent_from_host() -> TestResult {
     assert!(out.status.success());
 
     let stdout = String::from_utf8(out.stdout)?;
-    // A bare `package.json` has no lockfiles on host yet. Without a host file
-    // (or a previously seeded state-dir copy), Docker would fail to create
-    // the mountpoint inside `/app:ro`, so we filter those binds out entirely.
+    // A bare `package.json` has no lockfiles on host. The manifest's
+    // `primary_lock_file` (package-lock.json for node) is bound from
+    // state-dir as a stub so `npm i` can create the real lockfile on
+    // first run. The non-primary entries stay unbound.
     // See ADR-0003 § Lockfile mount mechanics.
     assert!(
-        !stdout.contains("/lockfiles/"),
-        "no lockfile mounts when none exist on host: {stdout}"
+        stdout.contains("/lockfiles/package-lock.json:/app/package-lock.json"),
+        "expected primary lockfile bind: {stdout}"
+    );
+    assert!(
+        !stdout.contains("/lockfiles/pnpm-lock.yaml"),
+        "pnpm-lock.yaml is non-primary -> no bind: {stdout}"
+    );
+    assert!(
+        !stdout.contains("/lockfiles/yarn.lock"),
+        "yarn.lock is non-primary -> no bind: {stdout}"
     );
     Ok(())
 }

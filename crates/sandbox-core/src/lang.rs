@@ -48,6 +48,16 @@ pub struct LangManifest {
     #[serde(default)]
     pub lock_files: Vec<String>,
 
+    /// The lockfile we'll seed on first run when the host has *none* of the
+    /// `lock_files`. Picking one (typically the language's "default" — npm
+    /// for node, bun for bun, cargo for rust) lets `npm i` / `bun i` /
+    /// `cargo build` create a real lockfile in the state-dir bind even on a
+    /// fresh project, instead of failing with EROFS against the read-only
+    /// source mount. When unset, falls back to the first entry in
+    /// `lock_files`. See ADR-0003 § Lockfile mount mechanics.
+    #[serde(default)]
+    pub primary_lock_file: Option<String>,
+
     #[serde(default)]
     pub default_port: Option<u16>,
 
@@ -62,6 +72,17 @@ pub struct LangManifest {
 
     #[serde(default)]
     pub port_detection: Option<PortDetection>,
+}
+
+impl LangManifest {
+    /// The lockfile to seed on first run when none of `lock_files` exists
+    /// on the host. Explicit `primary_lock_file` wins; otherwise falls back
+    /// to the first declared entry.
+    pub fn primary_lock(&self) -> Option<&str> {
+        self.primary_lock_file
+            .as_deref()
+            .or_else(|| self.lock_files.first().map(String::as_str))
+    }
 }
 
 fn default_shell() -> String {

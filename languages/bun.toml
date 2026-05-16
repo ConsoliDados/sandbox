@@ -5,6 +5,7 @@ detect = ["bun.lockb", "bun.lock", "bunfig.toml"]
 priority = 10
 package_dirs = ["node_modules"]
 lock_files = ["bun.lockb", "bun.lock", "package-lock.json"]
+primary_lock_file = "bun.lock"
 default_port = 3000
 extra_packages = ["zsh", "git", "starship"]
 shell = "/bin/bash"
