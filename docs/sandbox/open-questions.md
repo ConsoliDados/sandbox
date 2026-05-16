@@ -35,6 +35,22 @@ Leaning (c). Decide in Phase 2.
 
 Leaning (c). Decide in Phase 2.
 
+### OQ-008 — Image supply chain hardening: which motors, which thresholds? (2026-05-16)
+
+Phase 6 closes the cheap/high-signal vectors (registry+namespace allowlist in the compose validator) and Phase 7 covers digest pinning. The deeper work — image signing verification, CVE scanning, layer content scan — sits in the Phase 8 stub and is **blocked on study** because each one has open design decisions.
+
+Open sub-questions:
+
+- **(a) Signing/provenance:** cosign? sigstore? plain GPG? What fraction of the registries we care about (docker.io/library, ghcr.io) actually sign their images today? Without supply-side adoption a verifier is theatre.
+- **(b) CVE scanner choice:** Trivy vs Grype vs Syft. Each has different DB cadence, license posture, and false-positive profile. Bundled binary vs ephemeral container (same pattern as `sandbox scan --update-db` for ClamAV)?
+- **(c) CVE noise gating:** base images carry many Low/Medium CVEs that are not exploitable in our context. Do we block on Critical only? On reachable-from-`/app` only (requires call-graph)? Per-image suppression like the source scan's `scan-ignore.toml`?
+- **(d) Layer content scan scope:** scan every layer or only top layer? `docker save` + extract + scan is heavy — is it worth the cost vs the marginal threats it catches that registry allowlist doesn't?
+- **(e) When to scan:** at `docker pull` time (slows every run) vs at first use of each image (cached) vs on-demand via `sandbox scan --image NAME`?
+
+Decision sequence: settle (a) first (it gates whether signing is even a real lever), then (b)+(c) together (scanner + threshold are coupled), then (d)+(e) as implementation details.
+
+Leaning: pick after v0.1 ships and we have real usage data on what false positives look like. Until then, the registry allowlist + digest pinning combo is the floor we ship.
+
 ### OQ-006 — Future shell support (2026-05-06)
 
 User asked for an addendum: when going OSS, support bash and fish in addition to zsh. Plan:

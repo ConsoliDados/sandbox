@@ -109,20 +109,32 @@ Branch: `feat/lifecycle-mvp`.
 ### Phase 6 — Runtime network toggle + project compose
 
 - [ ] `sandbox net on|off|status PROJECT`
-- [ ] Project compose detection
+- [ ] Project compose detection (glob `**/compose*.y{,a}ml`, `--compose-file` override)
 - [ ] `sandbox-scan::compose::validate` runs before `docker compose up`
-- [ ] Sandbox container joins project's compose network
+- [ ] **Registry/namespace allowlist** in compose validator — block non-allowlisted `image:` refs (default allow: `docker.io/library/*`, `ghcr.io/*`; user-extensible via config). Catches typo-squats (`postgress`, `nodee`) and rogue namespaces. Exit 31 in safe; `--unsafe` bypasses.
+- [ ] Sandbox container joins project's compose network (3 networks: internal + proxy + compose)
+- [ ] Post-`up` network rewire in safe mode (deps moved to `sandbox-compose-<hash>` `--internal`)
 - [ ] `sandbox down --with-deps` and `sandbox nuke` cleanup compose deps
-- [ ] ADR-0010 (project compose deps integration) finalized
+- [x] ADR-0010 (project compose deps integration) finalized — Accepted 2026-05-16
 
 ### Phase 7 — Hardening + polish
 
 - [ ] `--print-cmd` everywhere
 - [ ] `--dry-run` mode end-to-end
 - [ ] CPU/memory limits from profile
-- [ ] Optional image digest pinning
+- [ ] Optional image digest pinning (closes mutable-tag swap vector)
 - [ ] CI: `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`
 - [ ] User documentation site (mdbook) — optional
+
+### Phase 8 — Image supply chain hardening (post-v0.1, study first)
+
+Status: **backlog, pending study.** Registry allowlist (Phase 6) and digest pinning (Phase 7) already cover the highest-signal vectors. This phase bundles the deeper, costlier work that needs design decisions before implementation.
+
+- [ ] **Image signing / provenance verification** — cosign / sigstore. Verify pulled images are signed by a trusted maintainer. Ecosystem still settling; needs survey of what fraction of the registries we care about actually sign.
+- [ ] **CVE scanning** — Trivy / Grype / Syft against pulled images. Hard problem is **noise**: base images carry dozens of Low/Medium CVEs that are not exploitable in our context. Decision needed on severity gating, suppression scope, cache strategy, and whether to scan deps or just base images.
+- [ ] **Layer content scan** — extract image layers and run YARA / heuristics over file contents (analogous to the source scan we already do). Catches malware embedded in images that registry allowlist would miss. Expensive — `docker save` + tar extract + per-file scan.
+
+See OQ-008 for the open questions that must close before any of this lands on a real phase.
 
 ## Cross-session resume protocol
 
@@ -148,3 +160,7 @@ See `open-questions.md` and `sad.md` "Future directions". Notably:
 - Bollard async Docker
 - VM-based isolation backend
 - Multi-shell support (only zsh for v0.1)
+
+Items previously listed here but now tracked as future phases:
+
+- **Image supply chain (signing, CVE, layer scan)** — moved to Phase 8 backlog above. Blocked on OQ-008.
