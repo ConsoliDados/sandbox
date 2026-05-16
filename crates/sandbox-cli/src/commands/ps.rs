@@ -153,6 +153,7 @@ mod tests {
             last_run_at: None,
             named_volumes: vec![],
             lockfiles: vec![],
+            ports: vec![],
         }
     }
 

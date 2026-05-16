@@ -24,6 +24,9 @@ pub(crate) struct Args {
     pub(crate) network: bool,
     pub(crate) no_scan: bool,
     pub(crate) with_clamav: bool,
+    /// Override port detection: each value becomes a Traefik entryPoint.
+    /// When empty we run the manifest's `port_detection` heuristics.
+    pub(crate) expose: Vec<u16>,
     pub(crate) print_cmd: bool,
 }
 
@@ -49,14 +52,40 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
     pre_flight_scan(&ctx, &args).await?;
 
     sandbox_docker::ensure_internal(SANDBOX_INTERNAL).await?;
+    if !ctx.ports.is_empty() {
+        // Project asked to be reachable through the proxy. The network is
+        // created here (idempotent) so `docker network connect` later in
+        // `lifecycle::run` can't fail with "network not found" when the
+        // user hasn't run `sandbox proxy start` yet. The proxy itself is
+        // still opt-in — the labels are inert until Traefik comes up.
+        sandbox_docker::ensure_bridge(sandbox_proxy::PROXY_NETWORK).await?;
+    }
     for vol in ctx.project.named_volumes() {
-        sandbox_docker::ensure_volume(vol.as_str()).await?;
+        // Newly-created Docker named volumes are owned by root inside the
+        // container. We always launch the project as the host UID, so
+        // first-time creation triggers a one-shot chown init container
+        // (alpine, --network none) to remap ownership. Subsequent runs
+        // skip the chown entirely.
+        let created =
+            sandbox_docker::ensure_volume_owned(vol.as_str(), ctx.user.uid, ctx.user.gid).await?;
+        if created {
+            tracing::info!(
+                volume = vol.as_str(),
+                uid = ctx.user.uid,
+                gid = ctx.user.gid,
+                "named volume created + chowned for host user"
+            );
+        }
     }
     ensure_host_mountpoints(&ctx)?;
     seed_lockfiles(&ctx)?;
 
-    attach_or_run(&ctx, &plan).await?;
+    ensure_running(&ctx, &plan).await?;
+    // Persist state as soon as the container exists, before we hand the
+    // user a shell — so `sandbox ps` / `sandbox proxy start` see the new
+    // ports even if the exec attach fails (e.g. non-TTY stdin).
     save_state(&ctx)?;
+    attach_shell(&ctx).await?;
     Ok(())
 }
 
@@ -161,6 +190,13 @@ struct Context {
     /// (lockfile basename, host seed path). Empty when `unsafe_mode` is on or
     /// the manifest declares no lockfiles. See ADR-0003.
     lockfile_seeds: Vec<(String, PathBuf)>,
+    /// Resolved ports (CLI overrides ∪ manifest-driven detection). Empty
+    /// vec means the project doesn't request proxy routing; non-empty
+    /// triggers Traefik labels + a second network on the Plan.
+    ports: Vec<u16>,
+    /// User-facing project slug used as the Host component of
+    /// `<slug>.sandbox.localhost`. Derived from the canonical project path.
+    slug: String,
 }
 
 impl Context {
@@ -193,7 +229,9 @@ impl Context {
 
         let user = UserSpec::current()?;
         let dotfiles = dotfiles::discover(&paths);
-        let lockfile_seeds = lockfile_seed_paths(&paths, &project, &profile);
+        let lockfile_seeds = lockfile_seed_paths(&paths, &project, &manifest, &profile);
+        let ports = sandbox_proxy::detect_ports(&project.path, &manifest, &args.expose)?;
+        let slug = sandbox_proxy::slug_from_path(&project.path);
         Ok(Self {
             paths,
             project,
@@ -202,6 +240,8 @@ impl Context {
             user,
             dotfiles,
             lockfile_seeds,
+            ports,
+            slug,
         })
     }
 }
@@ -213,23 +253,31 @@ impl Context {
 /// declared lockfile is mapped to a writable file under the per-project state
 /// dir, which we'll bind on top of `/app/<name>`.
 ///
-/// We filter to lockfiles that already exist on the host source **or** have
-/// already been seeded in the state dir. Skipping the others avoids a Docker
-/// failure mode: with `/app` mounted `:ro`, the daemon cannot create a missing
-/// `/app/<lockfile>` mountpoint inside the read-only filesystem. A lockfile
-/// the user hasn't created yet simply doesn't get bound; package managers
-/// that need to *create* one must run under `--unsafe` (or the user can
-/// `touch` it on the host first). See ADR-0003 § Lockfile mount mechanics.
+/// Selection rules:
+///
+/// 1. Every manifest-declared lockfile that already exists on the host
+///    source **or** in the state dir is bound (the common case once the
+///    project has been initialized).
+/// 2. If after rule 1 the result is empty, fall back to the manifest's
+///    `primary_lock_file` so a fresh project can still let its package
+///    manager *create* a real lockfile on first run. `seed_lockfiles`
+///    later touches an empty stub on the host so Docker can mount over it
+///    inside the `/app:ro` bind (mount-on-RO doesn't allow `mkdirat`).
+///    Without this, `npm install` on a fresh project hits EROFS — exactly
+///    the issue Phase 5 smoke surfaced.
+///
+/// See ADR-0003 § Lockfile mount mechanics.
 fn lockfile_seed_paths(
     paths: &Paths,
     project: &Project,
+    manifest: &LangManifest,
     profile: &Profile,
 ) -> Vec<(String, PathBuf)> {
     if profile.unsafe_mode {
         return Vec::new();
     }
     let dir = paths.lockfiles_dir(&project.hash.short());
-    project
+    let mut seeds: Vec<(String, PathBuf)> = project
         .lock_files
         .iter()
         .filter(|name| {
@@ -238,13 +286,26 @@ fn lockfile_seed_paths(
             seed.is_file() || host.is_file()
         })
         .map(|name| (name.clone(), dir.join(name)))
-        .collect()
+        .collect();
+    if seeds.is_empty()
+        && let Some(primary) = manifest.primary_lock()
+    {
+        seeds.push((primary.to_string(), dir.join(primary)));
+    }
+    seeds
 }
 
 /// Create the lockfiles seed dir and ensure each filtered lockfile exists as a
 /// regular file under the state dir so Docker performs a file bind. On first
 /// sight we copy the project's current lockfile from the host; subsequent runs
 /// preserve the seed (state-dir is the source of truth in safe/paranoid).
+///
+/// When the manifest's `primary_lock_file` falls through (no lockfile on host
+/// AND no seed yet), this function ALSO touches an empty stub on the host
+/// — Docker cannot create the mountpoint file inside the `/app:ro` bind, so
+/// the bind target must already exist on the source side. The stub is empty
+/// (zero bytes); the real lockfile contents live in the state-dir bind and
+/// get written there by the in-container package manager.
 fn seed_lockfiles(ctx: &Context) -> Result<()> {
     if ctx.lockfile_seeds.is_empty() {
         return Ok(());
@@ -252,12 +313,20 @@ fn seed_lockfiles(ctx: &Context) -> Result<()> {
     let dir = ctx.paths.lockfiles_dir(&ctx.project.hash.short());
     std::fs::create_dir_all(&dir)?;
     for (name, seed) in &ctx.lockfile_seeds {
+        let host_source = ctx.project.path.join(name);
+        if !host_source.is_file() {
+            // Primary-lock fallback path. Touch an empty file on the host so
+            // the `:ro` bind has a mountpoint, log loudly so the user knows
+            // we wrote into their tree.
+            tracing::info!(
+                path = %host_source.display(),
+                "touching empty primary lockfile on host (mount-on-RO requires the target to exist)"
+            );
+            std::fs::File::create(&host_source)?;
+        }
         if seed.exists() {
             continue;
         }
-        let host_source = ctx.project.path.join(name);
-        // lockfile_seed_paths only yields entries with a present host file or
-        // a present seed; if we reach here, the host file must exist.
         std::fs::copy(&host_source, seed)?;
     }
     Ok(())
@@ -288,6 +357,14 @@ fn ensure_host_mountpoints(ctx: &Context) -> Result<()> {
 
 fn build_plan(ctx: &Context) -> Plan {
     let mounts = build_mounts(ctx);
+    let (labels, additional_networks) = if ctx.ports.is_empty() {
+        (Vec::new(), Vec::new())
+    } else {
+        (
+            sandbox_proxy::labels_for_project(&ctx.slug, &ctx.ports, sandbox_proxy::DEFAULT_DOMAIN),
+            vec![sandbox_proxy::PROXY_NETWORK.to_string()],
+        )
+    };
     Plan {
         image: ctx.manifest.image.clone(),
         container_name: ctx.project.container_name.clone(),
@@ -304,12 +381,20 @@ fn build_plan(ctx: &Context) -> Plan {
             cap_drop_all: ctx.profile.cap_drop == "ALL",
             no_new_privileges: ctx.profile.no_new_privileges,
         },
+        additional_networks,
         resources: ResourceSpec {
             cpus: ctx.profile.cpu,
             memory_mb: ctx.profile.memory_mb,
         },
-        entrypoint: Some(ctx.manifest.shell.clone()),
-        command: vec![],
+        labels,
+        // PID 1 is `sleep infinity` (keepalive), not the shell. The
+        // interactive shell is layered via `docker exec -it <shell>` in
+        // attach_or_run. Keeping the entrypoint as the shell would tie
+        // the container's lifetime to the user's session — `node srv & exit`
+        // would kill PID 1 (bash), and the container (and the node) with it.
+        // The keepalive entrypoint is the standard devcontainer pattern.
+        entrypoint: Some("sleep".into()),
+        command: vec!["infinity".into()],
         interactive: true,
         tty: true,
         remove_on_exit: false,
@@ -383,23 +468,34 @@ fn build_env(ctx: &Context) -> Vec<(String, String)> {
     ]
 }
 
-async fn attach_or_run(ctx: &Context, plan: &Plan) -> Result<()> {
+/// Make sure the container is up and running. PID 1 is the keepalive
+/// (`sleep infinity` per `build_plan`); the user's interactive shell is
+/// layered on top via [`attach_shell`], so exiting the shell does not
+/// terminate the container.
+async fn ensure_running(ctx: &Context, plan: &Plan) -> Result<()> {
     let name = &ctx.project.container_name;
-    if sandbox_docker::is_running(name).await? {
-        tracing::info!(container = %name, "exec into running container");
-        let opts = exec_opts(ctx);
-        sandbox_docker::exec(name, &opts, std::slice::from_ref(&ctx.manifest.shell)).await?;
-        return Ok(());
-    }
-    if sandbox_docker::exists(name).await? {
+    if !sandbox_docker::exists(name).await? {
+        tracing::info!(container = %name, "creating new container");
+        sandbox_docker::run(plan).await?;
+    } else if !sandbox_docker::is_running(name).await? {
         tracing::info!(container = %name, "starting stopped container");
         sandbox_docker::start(name).await?;
-        let opts = exec_opts(ctx);
-        sandbox_docker::exec(name, &opts, std::slice::from_ref(&ctx.manifest.shell)).await?;
-        return Ok(());
+    } else {
+        tracing::info!(container = %name, "container already running");
     }
-    tracing::info!(container = %name, "creating new container");
-    sandbox_docker::run(plan).await?;
+    Ok(())
+}
+
+/// Open an interactive shell inside the running container via `docker exec`.
+/// The container survives `exit` because PID 1 stays alive.
+async fn attach_shell(ctx: &Context) -> Result<()> {
+    let opts = exec_opts(ctx);
+    sandbox_docker::exec(
+        &ctx.project.container_name,
+        &opts,
+        std::slice::from_ref(&ctx.manifest.shell),
+    )
+    .await?;
     Ok(())
 }
 
@@ -440,6 +536,7 @@ fn save_state(ctx: &Context) -> Result<()> {
             .iter()
             .map(|(name, _)| name.clone())
             .collect(),
+        ports: ctx.ports.clone(),
     };
     meta.save(&state_dir)?;
     Ok(())

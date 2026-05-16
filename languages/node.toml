@@ -5,6 +5,7 @@ detect = ["package.json"]
 priority = 0
 package_dirs = ["node_modules", ".pnpm-store", ".yarn"]
 lock_files = ["package-lock.json", "pnpm-lock.yaml", "yarn.lock"]
+primary_lock_file = "package-lock.json"
 default_port = 3000
 extra_packages = ["zsh", "git", "starship"]
 shell = "/bin/bash"

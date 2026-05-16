@@ -40,7 +40,9 @@ Named Docker volumes only mount at directory paths, so mounting one over a singl
 $XDG_DATA_HOME/sandbox/containers/<hash>/lockfiles/<name>   ←→   /app/<name>   (RW)
 ```
 
-- A manifest-declared lockfile is bound only when it already exists on the host source **or** has been seeded in the state dir on a previous run. Lockfiles absent from both are skipped: with `/app` mounted `:ro`, Docker cannot `mkdirat` a missing `/app/<name>` mountpoint and the whole `docker run` aborts. Users who need a package manager to *create* a fresh lockfile must either `touch` it on the host first or use `--unsafe` for that run.
+- A manifest-declared lockfile is bound when it already exists on the host source **or** has been seeded in the state dir on a previous run. Lockfiles absent from both are skipped (Docker cannot `mkdirat` a missing `/app/<name>` mountpoint inside `:ro`, so an unbound stub would abort the run).
+- **Primary-lock fallback** (added Phase 5b smoke): when the selection above is empty, the manifest's `primary_lock_file` is bound anyway — and `seed_lockfiles` touches an empty stub on the host so Docker can mount over it. The real lockfile lives in the state-dir bind; the host file stays empty until `sandbox sync-lock` (Phase 6+) copies it back. Without this, a fresh `npm install` / `bun install` / `cargo build` on a project with no lockfile hits `EROFS` against the read-only source. The package manager has nowhere to write the lockfile it's trying to create.
+- The host-touch is logged at INFO via `tracing` so the user sees the mutation. The stub file is zero bytes; functionally indistinguishable from `touch package-lock.json` before the run.
 - On each `run`, before `docker run`/`start`, the seed under `lockfiles/<name>` is created if missing by copying the host project's current lockfile. The seed is never overwritten on subsequent runs — state-dir is the source of truth in safe/paranoid.
 - The host project tree never sees the modifications (intentional: the threat model T2 requires source RO).
 - Bringing the modified lockfile back to the host (so it can be committed) is deferred to Phase 3 as `sandbox sync-lock` (or equivalent). Until then, users who need the new lockfile in their working tree promote to `unsafe` (where the lockfile is part of the source bind RW) and re-run.
@@ -53,6 +55,19 @@ In `unsafe`, no extra mount is added: the `/app` bind is RW and Docker writes pa
 Named volumes are mounted at `/app/<package_dir>` paths *inside* the read-only `/app` bind. Docker creates each inner mountpoint with `mkdirat`, which fails when the parent (`/app`) is a read-only bind whose host source doesn't already contain the directory. To avoid this, `sandbox run` ensures every manifest-declared `package_dir` exists on the host source before invoking `docker run`, creating an empty directory if missing (logged at INFO via `tracing`). This is a benign mutation — any package manager would create the same directory on first install — and matches the principle that the *source files* stay read-only while their carrier paths may need to exist.
 
 `--unsafe` skips this pre-creation: the source bind is already RW and Docker handles missing paths itself.
+
+### Named volume ownership (chown-on-create)
+
+Docker creates named volumes owned by `root:root` inside the container. The project container always runs as the host UID (per ADR-0009 / OQ-004) so `npm install`, `cargo build`, `pip install`, etc. hit `EACCES` on first write — they're trying to `mkdir` inside a volume whose top-level is root-owned.
+
+Fix: `sandbox-docker::volume::ensure_owned(name, uid, gid)` creates the volume if missing and then runs a one-shot init container — `docker run --rm --network none --user 0:0 -v <vol>:/v alpine:3 chown -R uid:gid /v` — to remap ownership. Returns `true` when chown ran (volume was new), `false` on no-op subsequent runs.
+
+Trade-offs:
+- First `sandbox run` per project pulls `alpine:3` once (~6 MB) and runs one chown per declared `package_dir`. Each chown is sub-second on a fresh volume.
+- The init container has `--network none` and no project mounts; the only thing it touches is the named volume.
+- Trusting `alpine:3` adds it to the trust boundary, alongside the language base image and `sandbox/scanner:latest`. Acceptable for v0.1; if alpine ever needs replacing, we pin a digest in `volume::INIT_IMAGE`.
+
+`--unsafe` skips the chown (and uses host bind mounts directly), so this only matters in safe/paranoid.
 
 ## Alternatives considered
 

@@ -47,6 +47,9 @@ pub(crate) enum Error {
     #[error("ClamAV scan failed (exit {code}): {stderr}")]
     ClamavScanFailed { code: i32, stderr: String },
 
+    #[error("reverse proxy is not configured yet — run `sandbox proxy start` first")]
+    ProxyNotConfigured,
+
     #[error("not implemented yet (Phase 0 skeleton); see roadmap")]
     NotImplemented,
 }

@@ -71,7 +71,7 @@ fn default_severity() -> String {
 }
 
 fn default_proxy_domain() -> String {
-    "sandbox.local".to_string()
+    "sandbox.localhost".to_string()
 }
 
 fn default_true() -> bool {

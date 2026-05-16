@@ -91,21 +91,24 @@ $SB --print-cmd run /tmp/sb-vol           | grep -o ":/app:ro\b"        # → :/
 $SB --print-cmd run /tmp/sb-vol --unsafe  | grep -o ":/app\b"           # → :/app (no :ro)
 ```
 
-### 2.2 Headless: lockfile state-dir bind only when present on host
+### 2.2 Headless: lockfile state-dir bind selection
 
 ```sh
 mkdir -p /tmp/sb-lock && echo '{"name":"itest"}' > /tmp/sb-lock/package.json
-# No lockfile on host yet:
-$SB --print-cmd run /tmp/sb-lock | grep "/lockfiles/" || echo "no lockfile binds"
-# → no lockfile binds
-
-# Add one lockfile:
-touch /tmp/sb-lock/package-lock.json
+# No lockfile on host yet — manifest's primary_lock_file
+# (package-lock.json for node) is bound as a stub so npm i works on
+# first run. Non-primary entries (pnpm-lock.yaml, yarn.lock) are NOT
+# bound until they exist on host or get seeded.
 $SB --print-cmd run /tmp/sb-lock | grep "/lockfiles/"
-# → exactly ONE bind for package-lock.json (yarn.lock / pnpm-lock.yaml NOT bound)
+# → exactly ONE bind: /lockfiles/package-lock.json:/app/package-lock.json
+
+# Add a non-primary lockfile alongside; it now joins the bind set:
+touch /tmp/sb-lock/pnpm-lock.yaml
+$SB --print-cmd run /tmp/sb-lock | grep -c "/lockfiles/"
+# → 2  (primary + the host-present pnpm-lock.yaml)
 ```
 
-Validates the [ADR-0003 mount-on-RO fix](adrs/0003-volume-strategy.md): we only bind lockfiles that exist on host or were previously seeded, otherwise Docker fails to create the mountpoint inside `:ro`.
+Validates the [ADR-0003 mount-on-RO fix](adrs/0003-volume-strategy.md): we bind lockfiles present on host, already seeded in state-dir, or the manifest's primary when none exist yet. The primary-fallback path touches an empty stub on the host so Docker can mount-on-RO; logged at INFO so it's visible in the run output.
 
 ### 2.3 Headless: `--network` keeps source RO
 
@@ -373,6 +376,188 @@ Restore with `$SB scan --update-db`.
 $SB run /tmp/sb-evil --with-clamav
 # → same pre-flight blocking as recipe 4.7, but ClamAV stage ran too.
 # → exit 30
+```
+
+---
+
+## Phase 5 — reverse proxy
+
+Hostname model is `<slug>.sandbox.localhost:<PORT>` per ADR-0005. Each port the
+project exposes becomes a Traefik entryPoint that binds on the host; the
+project container joins both `sandbox-internal` (egress-restricted) and
+`sandbox-proxy` (Traefik routing). The proxy itself is opt-in via
+`sandbox proxy start`.
+
+### No host setup required
+
+The `.localhost` TLD resolves to loopback by mandate of [RFC 6761](https://datatracker.ietf.org/doc/html/rfc6761#section-6.3).
+On modern glibc (`nss-myhostname` enabled by default) and macOS this works
+out of the box — `curl sb-web.sandbox.localhost:3000` reaches the proxy with
+zero `/etc/hosts` edits and no dnsmasq.
+
+To confirm your resolver supports it:
+
+```sh
+getent hosts anything.sandbox.localhost
+# → ::1             anything.sandbox.localhost   (or 127.0.0.1, both fine)
+```
+
+If `getent` returns nothing, your system lacks `nss-myhostname` (or has it
+disabled in `/etc/nsswitch.conf`). Workaround per project:
+
+```sh
+echo "127.0.0.1   sb-web.sandbox.localhost" | sudo tee -a /etc/hosts
+```
+
+### 5.1 Headless: port detection from `.env` + source regex
+
+```sh
+mkdir -p /tmp/sb-ports && cat > /tmp/sb-ports/package.json <<'EOF'
+{"name":"itest","scripts":{}}
+EOF
+echo 'PORT=5007' > /tmp/sb-ports/.env
+cat > /tmp/sb-ports/server.js <<'EOF'
+const app = require('express')();
+app.listen(3000);
+EOF
+
+$SB --print-cmd run /tmp/sb-ports
+```
+
+Expect the `docker run …` invocation to carry both ports:
+
+- `--label traefik.enable=true`
+- `--label traefik.http.routers.sb-sb-ports-3000.rule=Host(\`sb-ports.sandbox.localhost\`)`
+- `--label traefik.http.routers.sb-sb-ports-5007.rule=Host(\`sb-ports.sandbox.localhost\`)`
+- plus the `loadbalancer.server.port` labels for each.
+
+The `--print-cmd` output shows only the primary `--network sandbox-internal`;
+the second network (`sandbox-proxy`) is attached at runtime via
+`docker network connect` because `docker run --network` accepts only one
+network. See `lifecycle::run` in `sandbox-docker`.
+
+### 5.2 Headless: `--expose` overrides detection
+
+```sh
+$SB --print-cmd run /tmp/sb-ports --expose 8080 --expose 9090
+```
+
+Expect only `port-8080` and `port-9090` in the labels; the auto-detected
+3000/5007 are ignored when the CLI passes overrides.
+
+### 5.3 Headless: no detection + no override = no proxy labels
+
+```sh
+mkdir -p /tmp/sb-noport && echo '{"name":"x"}' > /tmp/sb-noport/package.json
+$SB --print-cmd run /tmp/sb-noport | grep -c traefik || true
+# → if the manifest has `default_port` (node does, 3000), one Host rule
+#   appears anyway because detection falls through to that default. Override
+#   with --expose 0 (or remove `default_port` from a custom manifest) to
+#   produce a label-free run.
+```
+
+### 5.4 Live: bring the proxy up (no projects)
+
+```sh
+$SB proxy start --dashboard
+$SB proxy status
+# → traefik service listed under `sandbox-proxy` compose project;
+# → state: running
+
+curl -s http://localhost:8090/api/version
+# → JSON with version: "3.1.x"
+
+# Dashboard (HTML) at:
+# → http://localhost:8090/dashboard/      (trailing slash matters)
+```
+
+Note: `curl http://localhost:8090/` (with no path) returns **404 page not
+found** — that's expected. Traefik has no root route by design; the API
+lives under `/api/*` and the UI under `/dashboard/`. Anything else on
+that entryPoint legitimately 404s.
+
+Generated artifacts at `~/.local/share/sandbox/proxy/`:
+- `traefik.yaml` (static config with the entryPoints and docker provider)
+- `docker-compose.yml` (Traefik service definition)
+
+### 5.5 Live: full round-trip on a real express project
+
+```sh
+mkdir -p /tmp/sb-web && cat > /tmp/sb-web/package.json <<'EOF'
+{"name":"sb-web","dependencies":{"express":"^4.19.0"}}
+EOF
+cat > /tmp/sb-web/server.js <<'EOF'
+const express = require('express');
+const app = express();
+app.get('/', (_req, res) => res.send('hello from sandbox\n'));
+app.listen(3000);
+EOF
+$SB run /tmp/sb-web --network --expose 3000   # --network for npm install
+# On first run only: alpine:3 is pulled once and a one-shot init
+# container chowns each named volume (node_modules, .pnpm-store, .yarn)
+# to your host UID — required so `npm install` can write inside.
+# See ADR-0003 § Named volume ownership.
+
+# inside the container:
+npm install express
+node server.js &     # backgrounded; survives `exit`
+exit                 # closes the exec session, container stays running
+
+$SB proxy start                               # registers port 3000
+curl http://sb-web.sandbox.localhost:3000/
+# → hello from sandbox
+```
+
+`--network` is needed once for `npm install` (egress); subsequent runs
+without it stay isolated. The container's PID 1 is `sleep infinity`
+(set by `build_plan`), so `exit` only ends the `docker exec` session —
+the container (and anything you backgrounded with `&`) keeps running.
+`sandbox down /tmp/sb-web` stops it; `sandbox nuke` removes it.
+
+**Two install footguns to know about:**
+
+- *`npm i` on a project with no lockfile*: works. The manifest's
+  `primary_lock_file` (`package-lock.json` for node, `bun.lock` for bun,
+  `Cargo.lock` for rust) gets an empty stub touched on the host so Docker
+  can mount-on-RO; npm then writes the real lockfile into the state-dir
+  bind. The host file stays empty until `sandbox sync-lock` (Phase 6+)
+  copies it back.
+
+- *`npm install <new-package>` in safe mode*: fails with `EROFS` against
+  `package.json`. Adding a dependency mutates the source itself, which the
+  RO bind blocks by design. Either edit `package.json` on the host and
+  then `npm i` inside (lockfile-only update works), or run with
+  `--unsafe` for that session if you've audited the project.
+
+**If `npm install` fails with `EACCES`** on a project created before the
+chown fix landed, the existing named volumes are still root-owned. Reset:
+
+```sh
+$SB nuke /tmp/sb-web -y          # drops volumes; next `run` chowns fresh
+```
+
+### 5.6 Live: stop / status / logs
+
+```sh
+$SB proxy logs --follow      # streams Traefik logs; Ctrl-C to detach
+$SB proxy stop               # docker compose down
+$SB proxy status             # state: stopped
+```
+
+Stopping the proxy doesn't remove the project containers — they keep
+running, just unreachable via `<slug>.sandbox.localhost:<PORT>` until the proxy
+comes back up. `sandbox run` continues to work the same way (labels are
+inert when nothing reads them).
+
+### Cleanup
+
+```sh
+$SB proxy stop
+$SB nuke /tmp/sb-web -y
+$SB nuke /tmp/sb-ports -y
+rm -rf /tmp/sb-web /tmp/sb-ports /tmp/sb-noport
+docker network rm sandbox-proxy   # optional; auto-recreated next start
+# (no /etc/hosts cleanup needed — *.localhost resolves natively via RFC 6761)
 ```
 
 ---

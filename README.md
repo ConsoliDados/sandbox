@@ -2,7 +2,7 @@
 
 Isolated, **secure-by-default** development environments in Docker for untrusted code (job interview challenges, OSS contributions, AI-generated code, etc.).
 
-> **Status:** 🟢 Phases 1–4 shipped on `dev` — full lifecycle, observability, and a three-motor scan pipeline (YARA + heuristics + compose + ClamAV). See [`docs/sandbox/roadmap.md`](docs/sandbox/roadmap.md).
+> **Status:** 🟢 Phases 1–5 shipped on `dev` — full lifecycle, observability, three-motor scan pipeline (YARA + heuristics + compose + ClamAV), and a Traefik reverse proxy with `<slug>.sandbox.localhost:<PORT>` routing. See [`docs/sandbox/roadmap.md`](docs/sandbox/roadmap.md).
 
 ## Why
 
@@ -42,9 +42,10 @@ sandbox run . --network
 | `sandbox scan [PATH] [--with-clamav] [--explain] [--format json\|table]` | Run security scan without launching |
 | `sandbox scan --update-db` | Refresh ClamAV signature DB |
 | `sandbox net on\|off PROJECT` | Toggle internet egress at runtime (Phase 6) |
-| `sandbox lang list\|show NAME\|add FILE` | Manage language manifests (Phase 5+) |
-| `sandbox proxy start\|stop\|status` | Control reverse proxy sidecar (Phase 5) |
-| `sandbox config edit\|show\|path` | Edit/show config (Phase 5+) |
+| `sandbox lang list\|show NAME\|add FILE` | Manage language manifests (Phase 7) |
+| `sandbox proxy start\|stop\|status\|logs` | Control the Traefik reverse proxy sidecar |
+| `sandbox run --expose PORT...` | Override port detection (proxy entryPoints) |
+| `sandbox config edit\|show\|path` | Edit/show config (Phase 7) |
 
 Full surface and semantics in [`docs/sandbox/srs.md`](docs/sandbox/srs.md). Exit codes are documented there too (notably 30 for scan-blocked, 40 for container-not-found, 20 for ClamAV DB missing).
 
@@ -78,7 +79,7 @@ Each crate has its own `AGENTS.md` describing responsibility and conventions.
 
 ```sh
 cargo build --workspace                                       # build all crates
-cargo test  --workspace                                       # 139 passing on Phase 4
+cargo test  --workspace                                       # 172 passing on Phase 5
 cargo fmt   --check                                           # silent = clean
 cargo clippy --workspace --all-targets -- -D warnings         # silent = clean
 bash scripts/dev/lint.sh                                      # combines fmt + clippy
@@ -118,7 +119,7 @@ printf 'X5O!P%%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' 
 $SB scan /tmp/sb-eicar --with-clamav --explain    # → clamav/Win.Test.EICAR_HDB-1 (critical)
 ```
 
-See [`smoke-tests.md`](docs/sandbox/smoke-tests.md) for full coverage (lifecycle, ps/logs/exec, exit codes, vscode autorun, package.json supply-chain shapes, compose audits, suppression syntax).
+See [`smoke-tests.md`](docs/sandbox/smoke-tests.md) for full coverage (lifecycle, ps/logs/exec, exit codes, vscode autorun, package.json supply-chain shapes, compose audits, suppression syntax, Traefik proxy + `<slug>.sandbox.localhost:<PORT>` routing).
 
 ## Documentation
 

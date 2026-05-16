@@ -27,16 +27,36 @@ pub async fn is_running(name: &ContainerName) -> Result<bool> {
     Ok(probe.success && probe.stdout.trim() == "true")
 }
 
-/// Execute the plan via `docker run`. Attaches stdio when interactive+tty so
-/// the user gets a real shell; otherwise captures output for tracing.
+/// Create + (optionally) connect extra networks + start the container, all
+/// detached. The container's PID 1 (set in `Plan.entrypoint`) is expected
+/// to be a long-running keepalive (`sleep infinity` for the dev-environment
+/// flow) so the container survives the user's interactive shell coming and
+/// going via `exec`.
+///
+/// `docker run --network` accepts only a single network, so when
+/// `plan.additional_networks` is non-empty we go through
+/// `docker create → docker network connect each extra → docker start`.
+/// When it's empty we skip the network-connect step.
 pub async fn run(plan: &Plan) -> Result<()> {
-    let args = plan.to_args();
-    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
-    if plan.interactive && plan.tty {
-        run_attached(&argv).await
-    } else {
-        run_capture(&argv).await.map(|_| ())
+    let mut create_args = plan.to_args();
+    if let Some(first) = create_args.first_mut() {
+        *first = "create".into();
     }
+    let argv: Vec<&str> = create_args.iter().map(String::as_str).collect();
+    run_capture(&argv).await?;
+
+    for net in &plan.additional_networks {
+        run_capture(&[
+            "network",
+            "connect",
+            net.as_str(),
+            plan.container_name.as_str(),
+        ])
+        .await?;
+    }
+
+    run_capture(&["start", plan.container_name.as_str()]).await?;
+    Ok(())
 }
 
 pub async fn start(name: &ContainerName) -> Result<()> {

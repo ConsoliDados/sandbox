@@ -44,7 +44,7 @@ sandbox run [PATH]
     [--no-scan]           Skip pre-flight scan (requires --unsafe)
     [--no-cache]          Force re-scan even if cache hit
     [--expose PORT ...]   Override port detection. Each PORT becomes a Traefik
-                          entryPoint reachable as <project>.sandbox.local:PORT
+                          entryPoint reachable as <project>.sandbox.localhost:PORT
                           (e.g. --expose 3000 5007). See ADR-0005.
     [--shell zsh|bash]    Shell to launch (default: zsh)
     [--rebuild]           Force rebuild of the container image
@@ -240,7 +240,7 @@ cache = true
 severity_threshold = "warn"
 
 [proxy]
-domain = "sandbox.local"
+domain = "sandbox.localhost"
 auto_start = true
 
 [profile.default]
