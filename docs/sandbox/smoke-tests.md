@@ -487,6 +487,11 @@ EOF
 echo "127.0.0.1   sb-web.sandbox.local" | sudo tee -a /etc/hosts
 
 $SB run /tmp/sb-web --network --expose 3000   # --network for npm install
+# On first run only: alpine:3 is pulled once and a one-shot init
+# container chowns each named volume (node_modules, .pnpm-store, .yarn)
+# to your host UID — required so `npm install` can write inside.
+# See ADR-0003 § Named volume ownership.
+
 # inside the container:
 npm install express
 node server.js &
@@ -502,6 +507,13 @@ without it stay isolated. The `node server.js &` keeps the process alive
 after `exit` because the container is configured `keepalive=false` for
 v0.1 — restart with `$SB run /tmp/sb-web` to re-enter, or wait for the
 `entrypoint_keepalive` manifest field (future phase).
+
+**If `npm install` fails with `EACCES`** on a project created before the
+chown fix landed, the existing named volumes are still root-owned. Reset:
+
+```sh
+$SB nuke /tmp/sb-web -y          # drops volumes; next `run` chowns fresh
+```
 
 ### 5.6 Live: stop / status / logs
 

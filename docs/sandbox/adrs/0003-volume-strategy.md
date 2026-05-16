@@ -54,6 +54,19 @@ Named volumes are mounted at `/app/<package_dir>` paths *inside* the read-only `
 
 `--unsafe` skips this pre-creation: the source bind is already RW and Docker handles missing paths itself.
 
+### Named volume ownership (chown-on-create)
+
+Docker creates named volumes owned by `root:root` inside the container. The project container always runs as the host UID (per ADR-0009 / OQ-004) so `npm install`, `cargo build`, `pip install`, etc. hit `EACCES` on first write — they're trying to `mkdir` inside a volume whose top-level is root-owned.
+
+Fix: `sandbox-docker::volume::ensure_owned(name, uid, gid)` creates the volume if missing and then runs a one-shot init container — `docker run --rm --network none --user 0:0 -v <vol>:/v alpine:3 chown -R uid:gid /v` — to remap ownership. Returns `true` when chown ran (volume was new), `false` on no-op subsequent runs.
+
+Trade-offs:
+- First `sandbox run` per project pulls `alpine:3` once (~6 MB) and runs one chown per declared `package_dir`. Each chown is sub-second on a fresh volume.
+- The init container has `--network none` and no project mounts; the only thing it touches is the named volume.
+- Trusting `alpine:3` adds it to the trust boundary, alongside the language base image and `sandbox/scanner:latest`. Acceptable for v0.1; if alpine ever needs replacing, we pin a digest in `volume::INIT_IMAGE`.
+
+`--unsafe` skips the chown (and uses host bind mounts directly), so this only matters in safe/paranoid.
+
 ## Alternatives considered
 
 - **(a) Always named volumes (no profile differentiation).** Rejected: the trusted/unsafe flow needs commitable lockfiles and IDE-visible `node_modules`. A consultant who validated a client repo must be able to `git status` and see the lockfile change.

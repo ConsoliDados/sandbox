@@ -61,7 +61,25 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
         sandbox_docker::ensure_bridge(sandbox_proxy::PROXY_NETWORK).await?;
     }
     for vol in ctx.project.named_volumes() {
-        sandbox_docker::ensure_volume(vol.as_str()).await?;
+        // Newly-created Docker named volumes are owned by root inside the
+        // container. We always launch the project as the host UID, so
+        // first-time creation triggers a one-shot chown init container
+        // (alpine, --network none) to remap ownership. Subsequent runs
+        // skip the chown entirely.
+        let created = sandbox_docker::ensure_volume_owned(
+            vol.as_str(),
+            ctx.user.uid,
+            ctx.user.gid,
+        )
+        .await?;
+        if created {
+            tracing::info!(
+                volume = vol.as_str(),
+                uid = ctx.user.uid,
+                gid = ctx.user.gid,
+                "named volume created + chowned for host user"
+            );
+        }
     }
     ensure_host_mountpoints(&ctx)?;
     seed_lockfiles(&ctx)?;

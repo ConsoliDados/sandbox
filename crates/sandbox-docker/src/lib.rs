@@ -29,4 +29,7 @@ pub use scanner::{
     clamscan_argv, db_volume_exists, ensure_image as ensure_scanner_image, freshclam_argv,
     image_exists as scanner_image_exists, run_clamscan, run_freshclam,
 };
-pub use volume::{ensure as ensure_volume, exists as volume_exists, remove as remove_volume};
+pub use volume::{
+    ensure as ensure_volume, ensure_owned as ensure_volume_owned, exists as volume_exists,
+    remove as remove_volume,
+};
