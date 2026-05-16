@@ -191,7 +191,7 @@ struct Context {
     /// triggers Traefik labels + a second network on the Plan.
     ports: Vec<u16>,
     /// User-facing project slug used as the Host component of
-    /// `<slug>.sandbox.local`. Derived from the canonical project path.
+    /// `<slug>.sandbox.localhost`. Derived from the canonical project path.
     slug: String,
 }
 

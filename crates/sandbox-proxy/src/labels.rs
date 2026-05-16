@@ -15,8 +15,13 @@
 
 use std::path::Path;
 
-/// Default Traefik proxy domain. Override via config (Phase 7).
-pub const DEFAULT_DOMAIN: &str = "sandbox.local";
+/// Default Traefik proxy domain. RFC 6761 mandates that any
+/// `*.localhost` name resolve to loopback, and `nss-myhostname` (default
+/// in modern glibc) honors this without any /etc/hosts or dnsmasq setup.
+/// Using `.localhost` instead of `.local` (which is the mDNS TLD per
+/// RFC 6762) avoids both the conflict with Avahi and the manual host
+/// resolution chore. Override via config (Phase 7).
+pub const DEFAULT_DOMAIN: &str = "sandbox.localhost";
 
 /// Generate `--label k=v` pairs for a project container with the given
 /// detected ports. Returns an empty vec when `ports` is empty (no labels =
@@ -140,8 +145,8 @@ mod tests {
         assert_eq!(
             host_rules,
             vec![
-                "Host(`myproj.sandbox.local`)",
-                "Host(`myproj.sandbox.local`)",
+                "Host(`myproj.sandbox.localhost`)",
+                "Host(`myproj.sandbox.localhost`)",
             ]
         );
     }

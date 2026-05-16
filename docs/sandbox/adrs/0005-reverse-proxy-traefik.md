@@ -13,13 +13,13 @@ A real project rarely runs as a single port. The common shape is a frontend and 
 
 We considered three exposure models during the design checkpoint of 2026-05-07:
 
-- **(a) Subdomain-by-name** — `web.<proj>.sandbox.local`, `api.<proj>.sandbox.local`, etc. Requires `--expose PORT:NAME` syntax. Scales but each service needs a name.
-- **(b) Path prefix** — `<proj>.sandbox.local/` and `<proj>.sandbox.local/api`. Single host but the backend has to accept the prefix; many frameworks need explicit `basePath` config or break.
-- **(c) Host + port** — `<proj>.sandbox.local:3000`, `<proj>.sandbox.local:5007`, `<proj>.sandbox.local:5432`. One host per project; one entryPoint per port.
+- **(a) Subdomain-by-name** — `web.<proj>.sandbox.localhost`, `api.<proj>.sandbox.localhost`, etc. Requires `--expose PORT:NAME` syntax. Scales but each service needs a name.
+- **(b) Path prefix** — `<proj>.sandbox.localhost/` and `<proj>.sandbox.localhost/api`. Single host but the backend has to accept the prefix; many frameworks need explicit `basePath` config or break.
+- **(c) Host + port** — `<proj>.sandbox.localhost:3000`, `<proj>.sandbox.localhost:5007`, `<proj>.sandbox.localhost:5432`. One host per project; one entryPoint per port.
 
 ## Decision
 
-**We will route all project services through Traefik using `<projname>.sandbox.local:PORT`.**
+**We will route all project services through Traefik using `<projname>.sandbox.localhost:PORT`.**
 
 For each port detected (or explicitly exposed), the proxy generates a Traefik entryPoint that binds that port on the host and forwards to the corresponding container on the project's bridge network. The hostname stays constant; the port distinguishes services.
 
@@ -50,7 +50,7 @@ Negative / open:
 
 - **Port conflicts between simultaneous projects.** Two projects both want `:3000`. Strategy: the first `sandbox run` host-binds the port; the second either picks a free neighbour or aborts with a clear message pointing at `--expose ALT_PORT`. Detail to be settled when the proxy crate is implemented (Phase 5).
 - **Privileged ports (`<1024`)** require either `CAP_NET_BIND_SERVICE` on the proxy or a port shift. Out of scope for v0.1; users should expose `8080` instead of `80`.
-- **Wildcard DNS** (`*.sandbox.local`) needs to resolve. We rely on `/etc/hosts` entries written by `sandbox proxy start`, or systemd-resolved / dnsmasq for users who prefer real wildcard resolution. Documented in playbook usage flow.
+- **Wildcard DNS** is automatic. The `.localhost` TLD resolves to loopback by [RFC 6761](https://datatracker.ietf.org/doc/html/rfc6761#section-6.3) mandate, and `nss-myhostname` (default in modern glibc) implements it. macOS resolves `.localhost` the same way. No `/etc/hosts` edits or dnsmasq required on either platform. This is why we picked `.localhost` over `.local` (which is mDNS territory per RFC 6762 and would conflict with Avahi).
 - **TLS** is out of scope for the MVP. Traefik can mint local certs (mkcert / step-ca) in a later phase.
 
 ## References

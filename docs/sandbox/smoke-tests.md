@@ -382,27 +382,32 @@ $SB run /tmp/sb-evil --with-clamav
 
 ## Phase 5 — reverse proxy
 
-Hostname model is `<slug>.sandbox.local:<PORT>` per ADR-0005. Each port the
+Hostname model is `<slug>.sandbox.localhost:<PORT>` per ADR-0005. Each port the
 project exposes becomes a Traefik entryPoint that binds on the host; the
 project container joins both `sandbox-internal` (egress-restricted) and
-`sandbox-proxy` (Traefik routing). One-time host setup, then the proxy
-itself is opt-in via `sandbox proxy start`.
+`sandbox-proxy` (Traefik routing). The proxy itself is opt-in via
+`sandbox proxy start`.
 
-### One-time host setup (`*.sandbox.local` resolution)
+### No host setup required
 
-Pick one of:
+The `.localhost` TLD resolves to loopback by mandate of [RFC 6761](https://datatracker.ietf.org/doc/html/rfc6761#section-6.3).
+On modern glibc (`nss-myhostname` enabled by default) and macOS this works
+out of the box — `curl sb-web.sandbox.localhost:3000` reaches the proxy with
+zero `/etc/hosts` edits and no dnsmasq.
+
+To confirm your resolver supports it:
 
 ```sh
-# /etc/hosts — simplest, but requires editing for every new project slug:
-echo "127.0.0.1   myproj.sandbox.local" | sudo tee -a /etc/hosts
-
-# OR a real wildcard via dnsmasq (recommended for repeat use):
-echo "address=/sandbox.local/127.0.0.1" | sudo tee /etc/dnsmasq.d/sandbox.conf
-sudo systemctl restart dnsmasq
+getent hosts anything.sandbox.localhost
+# → ::1             anything.sandbox.localhost   (or 127.0.0.1, both fine)
 ```
 
-Without one of these, `curl myproj.sandbox.local:3000` resolves nowhere and
-the proxy looks broken.
+If `getent` returns nothing, your system lacks `nss-myhostname` (or has it
+disabled in `/etc/nsswitch.conf`). Workaround per project:
+
+```sh
+echo "127.0.0.1   sb-web.sandbox.localhost" | sudo tee -a /etc/hosts
+```
 
 ### 5.1 Headless: port detection from `.env` + source regex
 
@@ -422,8 +427,8 @@ $SB --print-cmd run /tmp/sb-ports
 Expect the `docker run …` invocation to carry both ports:
 
 - `--label traefik.enable=true`
-- `--label traefik.http.routers.sb-sb-ports-3000.rule=Host(\`sb-ports.sandbox.local\`)`
-- `--label traefik.http.routers.sb-sb-ports-5007.rule=Host(\`sb-ports.sandbox.local\`)`
+- `--label traefik.http.routers.sb-sb-ports-3000.rule=Host(\`sb-ports.sandbox.localhost\`)`
+- `--label traefik.http.routers.sb-sb-ports-5007.rule=Host(\`sb-ports.sandbox.localhost\`)`
 - plus the `loadbalancer.server.port` labels for each.
 
 The `--print-cmd` output shows only the primary `--network sandbox-internal`;
@@ -487,8 +492,6 @@ const app = express();
 app.get('/', (_req, res) => res.send('hello from sandbox\n'));
 app.listen(3000);
 EOF
-echo "127.0.0.1   sb-web.sandbox.local" | sudo tee -a /etc/hosts
-
 $SB run /tmp/sb-web --network --expose 3000   # --network for npm install
 # On first run only: alpine:3 is pulled once and a one-shot init
 # container chowns each named volume (node_modules, .pnpm-store, .yarn)
@@ -501,7 +504,7 @@ node server.js &
 exit                                          # background-and-exit pattern
 
 $SB proxy start                               # registers port 3000
-curl http://sb-web.sandbox.local:3000/
+curl http://sb-web.sandbox.localhost:3000/
 # → hello from sandbox
 ```
 
@@ -542,7 +545,7 @@ $SB proxy status             # state: stopped
 ```
 
 Stopping the proxy doesn't remove the project containers — they keep
-running, just unreachable via `<slug>.sandbox.local:<PORT>` until the proxy
+running, just unreachable via `<slug>.sandbox.localhost:<PORT>` until the proxy
 comes back up. `sandbox run` continues to work the same way (labels are
 inert when nothing reads them).
 
@@ -554,7 +557,7 @@ $SB nuke /tmp/sb-web -y
 $SB nuke /tmp/sb-ports -y
 rm -rf /tmp/sb-web /tmp/sb-ports /tmp/sb-noport
 docker network rm sandbox-proxy   # optional; auto-recreated next start
-sudo sed -i '/sandbox\.local/d' /etc/hosts   # if you used /etc/hosts
+# (no /etc/hosts cleanup needed — *.localhost resolves natively via RFC 6761)
 ```
 
 ---

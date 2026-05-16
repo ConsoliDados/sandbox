@@ -2,7 +2,7 @@
 
 Isolated, **secure-by-default** development environments in Docker for untrusted code (job interview challenges, OSS contributions, AI-generated code, etc.).
 
-> **Status:** 🟢 Phases 1–5 shipped on `dev` — full lifecycle, observability, three-motor scan pipeline (YARA + heuristics + compose + ClamAV), and a Traefik reverse proxy with `<slug>.sandbox.local:<PORT>` routing. See [`docs/sandbox/roadmap.md`](docs/sandbox/roadmap.md).
+> **Status:** 🟢 Phases 1–5 shipped on `dev` — full lifecycle, observability, three-motor scan pipeline (YARA + heuristics + compose + ClamAV), and a Traefik reverse proxy with `<slug>.sandbox.localhost:<PORT>` routing. See [`docs/sandbox/roadmap.md`](docs/sandbox/roadmap.md).
 
 ## Why
 
@@ -119,7 +119,7 @@ printf 'X5O!P%%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' 
 $SB scan /tmp/sb-eicar --with-clamav --explain    # → clamav/Win.Test.EICAR_HDB-1 (critical)
 ```
 
-See [`smoke-tests.md`](docs/sandbox/smoke-tests.md) for full coverage (lifecycle, ps/logs/exec, exit codes, vscode autorun, package.json supply-chain shapes, compose audits, suppression syntax, Traefik proxy + `<slug>.sandbox.local:<PORT>` routing).
+See [`smoke-tests.md`](docs/sandbox/smoke-tests.md) for full coverage (lifecycle, ps/logs/exec, exit codes, vscode autorun, package.json supply-chain shapes, compose audits, suppression syntax, Traefik proxy + `<slug>.sandbox.localhost:<PORT>` routing).
 
 ## Documentation
 

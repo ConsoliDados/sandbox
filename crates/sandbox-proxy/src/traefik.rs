@@ -450,16 +450,16 @@ mod tests {
 
     #[test]
     fn render_project_dynamic_one_port() {
-        let s = render_project_dynamic("sb-web", "sandbox-abc123", &[3000], "sandbox.local");
+        let s = render_project_dynamic("sb-web", "sandbox-abc123", &[3000], "sandbox.localhost");
         assert!(s.contains("    sb-sb-web-3000:\n"));
-        assert!(s.contains("rule: \"Host(`sb-web.sandbox.local`)\""));
+        assert!(s.contains("rule: \"Host(`sb-web.sandbox.localhost`)\""));
         assert!(s.contains("entryPoints: [\"port-3000\"]"));
         assert!(s.contains("url: \"http://sandbox-abc123:3000\""));
     }
 
     #[test]
     fn render_project_dynamic_two_ports_two_routers_two_services() {
-        let s = render_project_dynamic("api", "sandbox-def", &[3000, 5007], "sandbox.local");
+        let s = render_project_dynamic("api", "sandbox-def", &[3000, 5007], "sandbox.localhost");
         // Two routers, two services, all pointing at the same Host.
         assert_eq!(s.matches("    sb-api-3000:").count(), 2); // once under routers, once under services
         assert_eq!(s.matches("    sb-api-5007:").count(), 2);
@@ -486,7 +486,7 @@ mod tests {
             "sandbox-abc".to_string(),
             vec![3000_u16],
         )];
-        let written = write_dynamic_configs(tmp.path(), projects, "sandbox.local")?;
+        let written = write_dynamic_configs(tmp.path(), projects, "sandbox.localhost")?;
         assert_eq!(written, vec!["sb-web".to_string()]);
         assert!(dyn_dir.join("sb-web.yaml").is_file());
         // Stale file must be gone.
@@ -501,7 +501,7 @@ mod tests {
             ("a".to_string(), "ca".to_string(), vec![3000_u16]),
             ("b".to_string(), "cb".to_string(), vec![]), // no ports → skipped
         ];
-        let written = write_dynamic_configs(tmp.path(), projects, "sandbox.local")?;
+        let written = write_dynamic_configs(tmp.path(), projects, "sandbox.localhost")?;
         assert_eq!(written, vec!["a".to_string()]);
         Ok(())
     }

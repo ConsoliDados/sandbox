@@ -91,7 +91,7 @@ async fn start(paths: &Paths, proxy_dir: &std::path::Path, dashboard: bool) -> R
     // picks them up on next watch tick (or at startup if proxy was down).
     sandbox_proxy::write_dynamic_configs(proxy_dir, projects, sandbox_proxy::DEFAULT_DOMAIN)?;
     sandbox_proxy::proxy_start(&compose).await?;
-    eprintln!("traefik up. routing: <slug>.sandbox.local:<PORT>");
+    eprintln!("traefik up. routing: <slug>.sandbox.localhost:<PORT>");
     if dashboard {
         eprintln!(
             "dashboard at http://localhost:{port}/dashboard/ \
@@ -99,10 +99,8 @@ async fn start(paths: &Paths, proxy_dir: &std::path::Path, dashboard: bool) -> R
             port = sandbox_proxy::DASHBOARD_PORT,
         );
     }
-    eprintln!(
-        "tip: add `127.0.0.1 *.sandbox.local` to /etc/hosts (or configure dnsmasq) \
-         so the slug resolves."
-    );
+    // `.localhost` resolves to loopback per RFC 6761 — no /etc/hosts or
+    // dnsmasq setup needed on modern glibc / macOS / WSL2.
     Ok(())
 }
 

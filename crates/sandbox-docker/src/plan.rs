@@ -372,14 +372,14 @@ mod tests {
         plan.labels.push(("traefik.enable".into(), "true".into()));
         plan.labels.push((
             "traefik.http.routers.sb-myproj-3000.rule".into(),
-            "Host(`myproj.sandbox.local`)".into(),
+            "Host(`myproj.sandbox.localhost`)".into(),
         ));
         let args = plan.to_args();
         assert!(has_pair(&args, "--label", "traefik.enable=true"));
         assert!(has_pair(
             &args,
             "--label",
-            "traefik.http.routers.sb-myproj-3000.rule=Host(`myproj.sandbox.local`)",
+            "traefik.http.routers.sb-myproj-3000.rule=Host(`myproj.sandbox.localhost`)",
         ));
     }
 
