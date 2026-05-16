@@ -500,8 +500,8 @@ $SB run /tmp/sb-web --network --expose 3000   # --network for npm install
 
 # inside the container:
 npm install express
-node server.js &
-exit                                          # background-and-exit pattern
+node server.js &     # backgrounded; survives `exit`
+exit                 # closes the exec session, container stays running
 
 $SB proxy start                               # registers port 3000
 curl http://sb-web.sandbox.localhost:3000/
@@ -509,10 +509,10 @@ curl http://sb-web.sandbox.localhost:3000/
 ```
 
 `--network` is needed once for `npm install` (egress); subsequent runs
-without it stay isolated. The `node server.js &` keeps the process alive
-after `exit` because the container is configured `keepalive=false` for
-v0.1 — restart with `$SB run /tmp/sb-web` to re-enter, or wait for the
-`entrypoint_keepalive` manifest field (future phase).
+without it stay isolated. The container's PID 1 is `sleep infinity`
+(set by `build_plan`), so `exit` only ends the `docker exec` session —
+the container (and anything you backgrounded with `&`) keeps running.
+`sandbox down /tmp/sb-web` stops it; `sandbox nuke` removes it.
 
 **Two install footguns to know about:**
 

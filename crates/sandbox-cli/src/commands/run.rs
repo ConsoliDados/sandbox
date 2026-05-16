@@ -80,8 +80,12 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
     ensure_host_mountpoints(&ctx)?;
     seed_lockfiles(&ctx)?;
 
-    attach_or_run(&ctx, &plan).await?;
+    ensure_running(&ctx, &plan).await?;
+    // Persist state as soon as the container exists, before we hand the
+    // user a shell — so `sandbox ps` / `sandbox proxy start` see the new
+    // ports even if the exec attach fails (e.g. non-TTY stdin).
     save_state(&ctx)?;
+    attach_shell(&ctx).await?;
     Ok(())
 }
 
@@ -383,8 +387,14 @@ fn build_plan(ctx: &Context) -> Plan {
             memory_mb: ctx.profile.memory_mb,
         },
         labels,
-        entrypoint: Some(ctx.manifest.shell.clone()),
-        command: vec![],
+        // PID 1 is `sleep infinity` (keepalive), not the shell. The
+        // interactive shell is layered via `docker exec -it <shell>` in
+        // attach_or_run. Keeping the entrypoint as the shell would tie
+        // the container's lifetime to the user's session — `node srv & exit`
+        // would kill PID 1 (bash), and the container (and the node) with it.
+        // The keepalive entrypoint is the standard devcontainer pattern.
+        entrypoint: Some("sleep".into()),
+        command: vec!["infinity".into()],
         interactive: true,
         tty: true,
         remove_on_exit: false,
@@ -458,23 +468,34 @@ fn build_env(ctx: &Context) -> Vec<(String, String)> {
     ]
 }
 
-async fn attach_or_run(ctx: &Context, plan: &Plan) -> Result<()> {
+/// Make sure the container is up and running. PID 1 is the keepalive
+/// (`sleep infinity` per `build_plan`); the user's interactive shell is
+/// layered on top via [`attach_shell`], so exiting the shell does not
+/// terminate the container.
+async fn ensure_running(ctx: &Context, plan: &Plan) -> Result<()> {
     let name = &ctx.project.container_name;
-    if sandbox_docker::is_running(name).await? {
-        tracing::info!(container = %name, "exec into running container");
-        let opts = exec_opts(ctx);
-        sandbox_docker::exec(name, &opts, std::slice::from_ref(&ctx.manifest.shell)).await?;
-        return Ok(());
-    }
-    if sandbox_docker::exists(name).await? {
+    if !sandbox_docker::exists(name).await? {
+        tracing::info!(container = %name, "creating new container");
+        sandbox_docker::run(plan).await?;
+    } else if !sandbox_docker::is_running(name).await? {
         tracing::info!(container = %name, "starting stopped container");
         sandbox_docker::start(name).await?;
-        let opts = exec_opts(ctx);
-        sandbox_docker::exec(name, &opts, std::slice::from_ref(&ctx.manifest.shell)).await?;
-        return Ok(());
+    } else {
+        tracing::info!(container = %name, "container already running");
     }
-    tracing::info!(container = %name, "creating new container");
-    sandbox_docker::run(plan).await?;
+    Ok(())
+}
+
+/// Open an interactive shell inside the running container via `docker exec`.
+/// The container survives `exit` because PID 1 stays alive.
+async fn attach_shell(ctx: &Context) -> Result<()> {
+    let opts = exec_opts(ctx);
+    sandbox_docker::exec(
+        &ctx.project.container_name,
+        &opts,
+        std::slice::from_ref(&ctx.manifest.shell),
+    )
+    .await?;
     Ok(())
 }
 
