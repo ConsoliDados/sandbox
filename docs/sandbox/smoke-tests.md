@@ -91,21 +91,24 @@ $SB --print-cmd run /tmp/sb-vol           | grep -o ":/app:ro\b"        # → :/
 $SB --print-cmd run /tmp/sb-vol --unsafe  | grep -o ":/app\b"           # → :/app (no :ro)
 ```
 
-### 2.2 Headless: lockfile state-dir bind only when present on host
+### 2.2 Headless: lockfile state-dir bind selection
 
 ```sh
 mkdir -p /tmp/sb-lock && echo '{"name":"itest"}' > /tmp/sb-lock/package.json
-# No lockfile on host yet:
-$SB --print-cmd run /tmp/sb-lock | grep "/lockfiles/" || echo "no lockfile binds"
-# → no lockfile binds
-
-# Add one lockfile:
-touch /tmp/sb-lock/package-lock.json
+# No lockfile on host yet — manifest's primary_lock_file
+# (package-lock.json for node) is bound as a stub so npm i works on
+# first run. Non-primary entries (pnpm-lock.yaml, yarn.lock) are NOT
+# bound until they exist on host or get seeded.
 $SB --print-cmd run /tmp/sb-lock | grep "/lockfiles/"
-# → exactly ONE bind for package-lock.json (yarn.lock / pnpm-lock.yaml NOT bound)
+# → exactly ONE bind: /lockfiles/package-lock.json:/app/package-lock.json
+
+# Add a non-primary lockfile alongside; it now joins the bind set:
+touch /tmp/sb-lock/pnpm-lock.yaml
+$SB --print-cmd run /tmp/sb-lock | grep -c "/lockfiles/"
+# → 2  (primary + the host-present pnpm-lock.yaml)
 ```
 
-Validates the [ADR-0003 mount-on-RO fix](adrs/0003-volume-strategy.md): we only bind lockfiles that exist on host or were previously seeded, otherwise Docker fails to create the mountpoint inside `:ro`.
+Validates the [ADR-0003 mount-on-RO fix](adrs/0003-volume-strategy.md): we bind lockfiles present on host, already seeded in state-dir, or the manifest's primary when none exist yet. The primary-fallback path touches an empty stub on the host so Docker can mount-on-RO; logged at INFO so it's visible in the run output.
 
 ### 2.3 Headless: `--network` keeps source RO
 
