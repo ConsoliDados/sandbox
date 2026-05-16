@@ -42,12 +42,14 @@ sandbox run [PATH]
     [--unsafe]            Disable all paranoid defaults: r/w volume, full network, skip scan
     [--network]           Allow internet egress (otherwise no egress)
     [--no-scan]           Skip pre-flight scan (requires --unsafe)
-    [--no-cache]          Force re-scan even if cache hit
+    [--with-clamav]       Add the ClamAV motor to the pre-flight scan
+                          (requires `sandbox scan --update-db` first)
+    [--no-cache]          Force re-scan even if cache hit (planned)
     [--expose PORT ...]   Override port detection. Each PORT becomes a Traefik
                           entryPoint reachable as <project>.sandbox.localhost:PORT
                           (e.g. --expose 3000 5007). See ADR-0005.
-    [--shell zsh|bash]    Shell to launch (default: zsh)
-    [--rebuild]           Force rebuild of the container image
+    [--shell zsh|bash]    Shell to launch (default: zsh, planned)
+    [--rebuild]           Force rebuild of the container image (planned)
 ```
 
 `PATH` defaults to `.`.
@@ -55,7 +57,7 @@ sandbox run [PATH]
 Behavior:
 1. Resolve `PATH` to absolute, error if not a directory.
 2. Detect language via manifest files (`languages/*.toml::detect`).
-3. Compute project hash (sha256 of `git ls-files` + `git status --porcelain`, fallback to walkdir if not a git repo).
+3. Compute project hash (`sha256(canonical_path)`, path-based per ADR-0009 — workspace-stable, not content-sensitive; the scanner keeps a separate content hash in `sandbox-scan`).
 4. Look up container by name `sandbox-<hash[..12]>`:
    - Running → `docker exec` shell into it.
    - Stopped → `docker start` then exec.
@@ -91,7 +93,9 @@ sandbox nuke [PROJECT]
     [--yes | -y]          Skip confirmation
 ```
 
-### `scan` (additional flags)
+### `scan`
+
+Standalone security scan (no container launched).
 
 ```
 sandbox scan [PATH]
@@ -149,20 +153,6 @@ sandbox net off PROJECT     Disconnect from bridge network
 sandbox net status PROJECT  Show current network membership
 ```
 
-### `scan`
-
-Standalone security scan (no container launched).
-
-```
-sandbox scan [PATH]
-    [--no-cache]          Force re-scan
-    [--explain]           Show details for each finding
-    [--format text|json|sarif] (default: text)
-    [--severity LEVEL]    Minimum severity to report: info|warn|high|critical (default: warn)
-```
-
-Exit code 0 if clean (or only `info` findings), 30 if blocking findings.
-
 ### `lang`
 
 Manage language manifests.
@@ -179,10 +169,10 @@ sandbox lang validate FILE             Lint a manifest without installing
 Control the Traefik reverse proxy sidecar.
 
 ```
-sandbox proxy start [--port 80] [--dashboard]
+sandbox proxy start [--dashboard]   --dashboard exposes Traefik API on :8090
 sandbox proxy stop
 sandbox proxy status
-sandbox proxy logs [--follow]
+sandbox proxy logs [--follow | -f]
 ```
 
 ### `config`

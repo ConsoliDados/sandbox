@@ -7,61 +7,112 @@
 - **Auditable**: every Docker action is loggable / printable; per-project state is on disk.
 - **Simple**: shell out to `docker`/`docker compose` instead of speaking the API directly (ADR-0002).
 
+## Entry point
+
+- **Binary name:** `sandbox` (defined in `crates/sandbox-cli/Cargo.toml`).
+- **Entry function:** `crates/sandbox-cli/src/main.rs::main` → `run()` → `match Command::<…>` → `commands::<name>::execute(Args)`.
+- **No business logic in `main.rs`.** It owns clap definitions and the dispatch table only. Each `commands/<name>.rs` is a thin orchestrator that calls into the library crates below.
+
 ## Crate map
 
 ```
-                          ┌─────────────────────┐
-                          │   sandbox-cli (bin) │  argparse, dispatch
-                          └─────────┬───────────┘
-                                    │ uses
-              ┌─────────────────────┼─────────────────────┐
-              ▼                     ▼                     ▼
-   ┌─────────────────┐   ┌───────────────────┐   ┌───────────────────┐
-   │  sandbox-core   │   │  sandbox-docker   │   │   sandbox-scan    │
-   │                 │   │                   │   │                   │
-   │ - Project       │   │ - Compose plan    │   │ - YARA engine     │
-   │ - Profile       │   │ - run/exec/stop   │   │ - Heuristic regex │
-   │ - LangManifest  │   │ - Network ops     │   │ - Cache (toml)    │
-   │ - State store   │   │ - Volume mgmt     │   │ - Compose validator│
-   │ - Hash          │   │                   │   │                   │
-   └─────────────────┘   └───────────────────┘   └───────────────────┘
-              ▲                                           ▲
-              │ uses                                      │ uses
-              │                                           │
-              │             ┌───────────────────┐         │
-              └─────────────│  sandbox-proxy    │─────────┘
-                            │                   │
-                            │ - Traefik labels  │
-                            │ - Sidecar mgmt    │
-                            │ - Port detection  │
-                            └───────────────────┘
+                       ┌──────────────────┐
+                       │   sandbox-cli    │  bin: `sandbox`
+                       │  main.rs +       │  argparse (clap), dispatch,
+                       │  commands/*.rs   │  exit codes, logging, error display
+                       └────────┬─────────┘
+              ┌────────────┬────┴────┬────────────┐
+              ▼            ▼         ▼            ▼
+       ┌────────────┐ ┌─────────┐ ┌────────┐ ┌──────────┐
+       │sandbox-core│ │ -docker │ │ -scan  │ │ -proxy   │
+       └─────▲──────┘ └────┬────┘ └───┬────┘ └────┬─────┘
+             │             │          │           │
+             └─────────────┴──────────┴───────────┘
+                  (the 3 adapters depend only on core)
 ```
 
-`sandbox-core` is foundational — no other crate depends on adapters; adapters depend on core.
+`sandbox-core` is foundational — it depends on nothing in the workspace. The three adapter crates (`-docker`, `-scan`, `-proxy`) depend **only on core**, never on each other. `sandbox-cli` is the single place where all four meet.
+
+## Module breakdown
+
+What each crate actually contains (live as of Phase 5):
+
+```
+sandbox-cli/                          bin: argparse + dispatch
+├── main.rs                           clap defs, dispatch table, tokio runtime
+├── error.rs                          cli::Error (composes lib errors via #[from])
+└── commands/
+    ├── run.rs   down.rs   nuke.rs    lifecycle (Phase 1)
+    ├── ps.rs    logs.rs   exec.rs    observability (Phase 3)
+    ├── scan.rs                       standalone scan (Phase 4)
+    ├── proxy.rs                      Traefik sidecar control (Phase 5)
+    └── dotfiles.rs                   host dotfile discovery
+
+sandbox-core/                         pure domain — no Docker, no network
+├── paths.rs                          XDG resolution (Paths)
+├── lang.rs                           LangManifest, LanguageRegistry, PortDetection
+├── hash.rs                           ProjectHash, project_hash (path-based)
+├── profile.rs                        Profile (safe/paranoid/unsafe + overrides)
+├── config.rs                         Config (~/.config/sandbox/config.toml)
+├── project.rs                        Project, ContainerName, NamedVolume
+└── state.rs                          Meta (per-project state at $XDG_DATA/.../containers/<hash>/)
+
+sandbox-docker/                       adapter: shell-out to the docker CLI
+├── plan.rs                           Plan (pure data), Mount, NetworkSpec, SecuritySpec, …
+├── lifecycle.rs                      run / start / exec / stop / rm
+├── volume.rs                         named volumes (ensure + first-run chown)
+├── network.rs                        ensure_internal + ensure_bridge
+├── scanner.rs                        ephemeral container for ClamAV
+└── cmd.rs                            wrapper over Command::new("docker")
+
+sandbox-scan/                         adapter: multi-tier scanner
+├── engine.rs                         orchestrates YARA + heuristics + compose + (optional) ClamAV
+├── yara/                             yara-x + rules/contagious_interview.yar
+├── heuristics/                       vscode, package_json, eval_patterns, network
+├── compose/                          parse + rules (privileged, host ns, dangerous caps, host mounts)
+├── clamav/                           clamscan output parser
+├── cache.rs                          content-hashed cache, RULESET_VERSION-gated
+├── suppress.rs                       IgnoreList (user-global)
+├── findings.rs                       Finding, Severity
+└── project_hash.rs                   content_hash (separate from core::ProjectHash)
+
+sandbox-proxy/                        adapter: Traefik reverse proxy
+├── traefik.rs                        render compose + static config; start/stop/status/logs
+├── labels.rs                         Traefik label generation (port = service, ADR-0005)
+├── ports/
+│   ├── env.rs                        .env key reader
+│   └── source.rs                     regex scan over source files
+└── error.rs
+```
 
 ## Dataflow: `sandbox run .`
 
+Reflects the live Phase 5 code in `crates/sandbox-cli/src/commands/run.rs`. Steps marked *(planned)* belong to later phases and are kept here to flag where they will slot in.
+
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ cli::commands::run                                                   │
+│ cli::commands::run::execute                                          │
 └──┬───────────────────────────────────────────────────────────────────┘
-   │ 1. parse args                                                     core::Args
-   │ 2. load config + profile                                          core::Config
-   │ 3. resolve project path                                           core::Project::resolve
+   │ 1. parse args                                                     clap → Args
+   │ 2. load profile + config                                          core::Profile, core::Config
+   │ 3. resolve project path (canonical, dir check)                    core::Project::resolve
    │ 4. detect language (manifest match)                               core::LangManifest::detect
-   │ 5. compute project hash                                           core::hash::project_hash
-   │ 6. load or initialize per-project state                           core::State::load
-   │ 7. run scan (unless --unsafe and profile permits)                 scan::scan
-   │    └─ block on findings or print + abort                          scan::Findings
-   │ 8. detect & validate project compose                              docker::compose::validate
-   │    └─ block on bad config or auto-launch deps                     docker::compose::up
-   │ 9. ensure named volumes exist                                     docker::volumes::ensure
-   │10. ensure network exists (sandbox-internal by default)            docker::network::ensure
-   │11. ensure proxy is running (if required by profile)               proxy::ensure_running
-   │12. compute final docker run plan (mounts, env, caps, ports)       docker::Plan
-   │13. either docker exec (existing container) or docker run          docker::run_or_attach
-   │14. save state (container id, ports, deps)                         core::State::save
-   │15. attach shell                                                   docker::attach
+   │ 5. compute project hash (path-based, ADR-0009)                    core::hash::project_hash
+   │ 6. load or initialize per-project state                           core::Meta::load
+   │ 7. detect ports + generate proxy labels                           proxy::detect_ports + proxy::labels_for_project
+   │ 8. build docker Plan (mounts, env, caps, labels, networks)        docker::Plan
+   │ 9. if --print-cmd: print Plan and exit                            docker::Plan: Display
+   │10. run pre-flight scan (unless --no-scan + --unsafe)              scan::scan → ScanReport
+   │    └─ exit 30 on severity ≥ High
+   │11. ensure sandbox-internal network exists                         docker::ensure_internal
+   │12. if ports detected: ensure sandbox-proxy bridge exists          docker::ensure_bridge
+   │13. ensure named volumes exist (+ first-run chown to host UID)     docker::ensure_volume_owned
+   │14. dispatch lifecycle:                                            docker::lifecycle::run
+   │    ├─ container missing → create → connect each extra net → start --interactive --attach
+   │    ├─ container stopped → start → exec
+   │    └─ container running → exec
+   │15. *(planned, Phase 6)* validate + launch project compose deps    docker::compose::validate/up
+   │16. *(planned)* persist updated Meta (port set, deps, last run)    core::Meta::save
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -90,9 +141,9 @@ A Profile is a named bundle of safety flags. Profiles compose with CLI flags (CL
 
 Loaded from `languages/*.toml`. Schema in [`languages/README.md`](../../languages/README.md). Hot-reloaded when the file changes (no rebuild).
 
-### `core::State`
+### `core::Meta`
 
-Per-project state on disk in `$XDG_DATA_HOME/sandbox/containers/<hash>/`. Append-only metadata + log dir.
+Per-project state on disk in `$XDG_DATA_HOME/sandbox/containers/<hash>/meta.toml`. Carries container name, source path, language, registered ports (Phase 5: `ports: Vec<u16>`, `#[serde(default)]` for additive evolution), and compose deps (Phase 6). `Meta::load_all()` is the union iterator used by `sandbox proxy start` to gather every project's ports.
 
 ### `docker::Plan`
 
