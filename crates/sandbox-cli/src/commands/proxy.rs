@@ -44,23 +44,52 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
 
 async fn start(paths: &Paths, proxy_dir: &std::path::Path, dashboard: bool) -> Result<()> {
     let metas = Meta::load_all(&paths.containers_dir())?;
-    let mut ports: Vec<u16> = metas.into_iter().flat_map(|m| m.ports).collect();
+    // Collect (slug, container_name, ports) per project so the dynamic
+    // config can point each port at the right backend container.
+    let projects: Vec<(String, String, Vec<u16>)> = metas
+        .iter()
+        .filter(|m| !m.ports.is_empty())
+        .map(|m| {
+            let slug = sandbox_proxy::slug_from_path(&m.project_path);
+            (slug, m.container_name.clone(), m.ports.clone())
+        })
+        .collect();
+    let mut ports: Vec<u16> = projects
+        .iter()
+        .flat_map(|(_, _, p)| p.iter())
+        .copied()
+        .collect();
     ports.sort_unstable();
     ports.dedup();
 
-    if ports.is_empty() {
+    if projects.is_empty() {
         eprintln!(
-            "no project ports registered yet — bringing Traefik up with the dashboard only.\n\
+            "no project ports registered yet — bringing Traefik up bare.\n\
              run `sandbox run --expose PORT .` first to register ports, then re-run \
              `sandbox proxy start` to refresh."
         );
     } else {
-        eprintln!("registering {} port(s): {:?}", ports.len(), ports);
+        let summary: Vec<String> = projects
+            .iter()
+            .map(|(slug, _, p)| format!("{slug} → {p:?}"))
+            .collect();
+        eprintln!(
+            "registering {} project(s): {}",
+            projects.len(),
+            summary.join(", ")
+        );
     }
 
     sandbox_docker::ensure_bridge(sandbox_proxy::PROXY_NETWORK).await?;
-    let cfg = ProxyConfig { ports, dashboard };
+    let cfg = ProxyConfig {
+        ports,
+        dashboard,
+        docker_api_version: None,
+    };
     let compose = render_proxy(proxy_dir, &cfg)?;
+    // Materialize per-project dynamic configs from the metas. File provider
+    // picks them up on next watch tick (or at startup if proxy was down).
+    sandbox_proxy::write_dynamic_configs(proxy_dir, projects, sandbox_proxy::DEFAULT_DOMAIN)?;
     sandbox_proxy::proxy_start(&compose).await?;
     eprintln!("traefik up. routing: <slug>.sandbox.local:<PORT>");
     if dashboard {

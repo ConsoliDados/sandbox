@@ -39,13 +39,27 @@ pub struct ProxyConfig {
     pub ports: Vec<u16>,
     /// When true, enable the Traefik dashboard on `DASHBOARD_PORT`.
     pub dashboard: bool,
+    /// Docker daemon API version (e.g. `1.45`) to pin via the
+    /// `DOCKER_API_VERSION` env var. Without this, the moby client lib
+    /// bundled in `traefik:v3.1` negotiates to 1.24 by default, which
+    /// modern Docker daemons (>= 25) reject. Caller should query the
+    /// daemon's `.Server.APIVersion` and pass it through.
+    pub docker_api_version: Option<String>,
 }
 
-/// Write `docker-compose.yml` and `traefik.yaml` under `proxy_dir`. Returns
-/// the compose file path so the caller can pass it to `docker compose -f`.
+/// Write `docker-compose.yml`, `traefik.yaml`, and an empty `dynamic/` dir
+/// under `proxy_dir`. Returns the compose file path so the caller can pass
+/// it to `docker compose -f`. The caller is responsible for writing per-
+/// project files into `dynamic/` via [`render_project_dynamic`] before
+/// starting the proxy.
 pub fn render(proxy_dir: &Path, cfg: &ProxyConfig) -> Result<PathBuf> {
     std::fs::create_dir_all(proxy_dir).map_err(|source| Error::Io {
         path: proxy_dir.to_path_buf(),
+        source,
+    })?;
+    let dynamic_dir = proxy_dir.join("dynamic");
+    std::fs::create_dir_all(&dynamic_dir).map_err(|source| Error::Io {
+        path: dynamic_dir.clone(),
         source,
     })?;
     let traefik_yaml = proxy_dir.join("traefik.yaml");
@@ -59,6 +73,39 @@ pub fn render(proxy_dir: &Path, cfg: &ProxyConfig) -> Result<PathBuf> {
         source,
     })?;
     Ok(compose_yml)
+}
+
+/// Clear and repopulate `<proxy_dir>/dynamic/` from an iterator of
+/// per-project tuples `(slug, container_name, ports)`. Wipes the directory
+/// first so a removed project doesn't leak a stale route file. Returns the
+/// list of slugs that ended up with a written file (skips projects with
+/// empty `ports`).
+pub fn write_dynamic_configs<I>(proxy_dir: &Path, projects: I, domain: &str) -> Result<Vec<String>>
+where
+    I: IntoIterator<Item = (String, String, Vec<u16>)>,
+{
+    let dynamic_dir = proxy_dir.join("dynamic");
+    if dynamic_dir.exists() {
+        std::fs::remove_dir_all(&dynamic_dir).map_err(|source| Error::Io {
+            path: dynamic_dir.clone(),
+            source,
+        })?;
+    }
+    std::fs::create_dir_all(&dynamic_dir).map_err(|source| Error::Io {
+        path: dynamic_dir.clone(),
+        source,
+    })?;
+    let mut written = Vec::new();
+    for (slug, container_name, ports) in projects {
+        if ports.is_empty() {
+            continue;
+        }
+        let body = render_project_dynamic(&slug, &container_name, &ports, domain);
+        let path = dynamic_dir.join(format!("{slug}.yaml"));
+        std::fs::write(&path, body).map_err(|source| Error::Io { path, source })?;
+        written.push(slug);
+    }
+    Ok(written)
 }
 
 fn render_static_config(cfg: &ProxyConfig) -> String {
@@ -77,16 +124,22 @@ fn render_static_config(cfg: &ProxyConfig) -> String {
         // any other name the auto-router has nowhere to bind and requests
         // here return 404 with no route matched. See Traefik docs on
         // `api.insecure`.
-        out.push_str(&format!(
-            "  traefik:\n    address: \":{DASHBOARD_PORT}\"\n"
-        ));
+        out.push_str(&format!("  traefik:\n    address: \":{DASHBOARD_PORT}\"\n"));
     }
     out.push('\n');
 
+    // File provider scans `/etc/traefik/dynamic/*.yaml` and re-reads on
+    // change. We chose this over the docker provider because the bundled
+    // moby client lib in `traefik:v3.x` negotiates a stale API version
+    // (1.24) that modern Docker daemons (>= 25) reject — and because the
+    // file provider also drops the docker.sock mount, which is a meaningful
+    // security win for a reverse proxy that doesn't need it. The CLI
+    // materializes one `dynamic/<slug>.yaml` per active sandbox from
+    // `Meta::load_all()` on every `proxy start`.
     out.push_str("providers:\n");
-    out.push_str("  docker:\n");
-    out.push_str(&format!("    network: {PROXY_NETWORK}\n"));
-    out.push_str("    exposedByDefault: false\n");
+    out.push_str("  file:\n");
+    out.push_str("    directory: /etc/traefik/dynamic\n");
+    out.push_str("    watch: true\n");
     out.push('\n');
 
     if cfg.dashboard {
@@ -95,6 +148,47 @@ fn render_static_config(cfg: &ProxyConfig) -> String {
 
     out.push_str("log:\n  level: INFO\n");
     out.push_str("accessLog: {}\n");
+    out
+}
+
+/// Render one dynamic-config block for a single project. Caller writes the
+/// returned string to `<proxy_dir>/dynamic/<slug>.yaml`; Traefik picks it
+/// up on next watch tick.
+///
+/// `container_name` must be reachable on the `sandbox-proxy` network — it's
+/// the Docker DNS name (e.g. `sandbox-abc123def456`). Project containers
+/// join that network via `Plan.additional_networks`, so the name resolves
+/// from inside the Traefik container.
+pub fn render_project_dynamic(
+    slug: &str,
+    container_name: &str,
+    ports: &[u16],
+    domain: &str,
+) -> String {
+    if ports.is_empty() {
+        return String::new();
+    }
+    let mut out = String::new();
+    out.push_str("# Auto-generated by `sandbox proxy start`. Do not edit by hand.\n");
+    out.push_str("http:\n");
+    out.push_str("  routers:\n");
+    for port in ports {
+        let id = format!("sb-{slug}-{port}");
+        out.push_str(&format!("    {id}:\n"));
+        out.push_str(&format!("      rule: \"Host(`{slug}.{domain}`)\"\n"));
+        out.push_str(&format!("      entryPoints: [\"port-{port}\"]\n"));
+        out.push_str(&format!("      service: {id}\n"));
+    }
+    out.push_str("  services:\n");
+    for port in ports {
+        let id = format!("sb-{slug}-{port}");
+        out.push_str(&format!("    {id}:\n"));
+        out.push_str("      loadBalancer:\n");
+        out.push_str("        servers:\n");
+        out.push_str(&format!(
+            "          - url: \"http://{container_name}:{port}\"\n"
+        ));
+    }
     out
 }
 
@@ -113,25 +207,28 @@ fn render_compose(cfg: &ProxyConfig) -> String {
     } else {
         format!("    ports:\n{ports_yaml}")
     };
+    // File provider only — no docker.sock mount needed. `dynamic/` is
+    // populated by the CLI from `Meta::load_all()` on every `proxy start`.
     // The network is declared `external` so compose just references the
     // pre-existing `sandbox-proxy` network (created by `ensure_bridge`
     // either from `sandbox run --expose` or from the proxy's own
     // `start` path). Without `external: true` compose tries to adopt the
     // network, fails because we didn't create it with compose labels, and
     // aborts the entire `up`.
+    let _ = &cfg.docker_api_version; // No longer needed with file provider.
     format!(
         "# Auto-generated by `sandbox proxy start`. Do not edit by hand.\n\
          name: {COMPOSE_PROJECT}\n\
          \n\
          services:\n\
          \x20\x20traefik:\n\
-         \x20\x20\x20\x20image: traefik:v3.1\n\
+         \x20\x20\x20\x20image: traefik:v3.5\n\
          \x20\x20\x20\x20container_name: {COMPOSE_PROJECT}\n\
          \x20\x20\x20\x20restart: unless-stopped\n\
          {ports_block}\
          \x20\x20\x20\x20volumes:\n\
          \x20\x20\x20\x20\x20\x20- ./traefik.yaml:/etc/traefik/traefik.yaml:ro\n\
-         \x20\x20\x20\x20\x20\x20- /var/run/docker.sock:/var/run/docker.sock:ro\n\
+         \x20\x20\x20\x20\x20\x20- ./dynamic:/etc/traefik/dynamic:ro\n\
          \x20\x20\x20\x20networks:\n\
          \x20\x20\x20\x20\x20\x20- {PROXY_NETWORK}\n\
          \n\
@@ -140,6 +237,31 @@ fn render_compose(cfg: &ProxyConfig) -> String {
          \x20\x20\x20\x20name: {PROXY_NETWORK}\n\
          \x20\x20\x20\x20external: true\n",
     )
+}
+
+/// Query the local daemon's API version (e.g. `"1.51"`) so the caller can
+/// pin it via `DOCKER_API_VERSION` on the Traefik container. Without
+/// pinning, the moby client lib inside `traefik:v3.1` negotiates to a
+/// stale 1.24 that modern daemons reject.
+pub async fn detect_docker_api_version() -> Result<String> {
+    let output = tokio::process::Command::new("docker")
+        .args(["version", "--format", "{{.Server.APIVersion}}"])
+        .output()
+        .await
+        .map_err(|e| Error::TraefikLifecycle(format!("docker version: {e}")))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        return Err(Error::TraefikLifecycle(format!(
+            "docker version failed: {stderr}"
+        )));
+    }
+    let v = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if v.is_empty() {
+        return Err(Error::TraefikLifecycle(
+            "docker version returned empty server API version".into(),
+        ));
+    }
+    Ok(v)
 }
 
 /// Whether the proxy container is currently running.
@@ -241,6 +363,7 @@ mod tests {
         let s = render_static_config(&ProxyConfig {
             ports: vec![3000, 5007],
             dashboard: false,
+            docker_api_version: None,
         });
         assert!(s.contains("port-3000:\n"));
         assert!(s.contains("port-5007:\n"));
@@ -255,6 +378,7 @@ mod tests {
         let s = render_static_config(&ProxyConfig {
             ports: vec![3000],
             dashboard: true,
+            docker_api_version: None,
         });
         // Entry point must be named `traefik` (not `dashboard`) so the
         // auto-router under `api.insecure: true` actually attaches.
@@ -268,6 +392,7 @@ mod tests {
         let s = render_compose(&ProxyConfig {
             ports: vec![3000, 5007],
             dashboard: false,
+            docker_api_version: None,
         });
         assert!(s.contains(&format!("name: {COMPOSE_PROJECT}\n")));
         assert!(s.contains("\"3000:3000\""));
@@ -283,8 +408,23 @@ mod tests {
         let s = render_compose(&ProxyConfig {
             ports: vec![],
             dashboard: false,
+            docker_api_version: None,
         });
         assert!(!s.contains("ports:"));
+    }
+
+    #[test]
+    fn render_compose_does_not_mount_docker_socket() {
+        // The file provider replaced the docker provider; the proxy no
+        // longer needs the daemon socket. Keeping the socket out is a
+        // meaningful security win for the reverse proxy.
+        let s = render_compose(&ProxyConfig {
+            ports: vec![3000],
+            dashboard: false,
+            docker_api_version: None,
+        });
+        assert!(!s.contains("docker.sock"));
+        assert!(s.contains("./dynamic:/etc/traefik/dynamic:ro"));
     }
 
     #[test]
@@ -293,13 +433,76 @@ mod tests {
         let cfg = ProxyConfig {
             ports: vec![3000],
             dashboard: true,
+            docker_api_version: None,
         };
         let compose = render(tmp.path(), &cfg)?;
         assert!(compose.is_file());
         assert!(tmp.path().join("traefik.yaml").is_file());
-        // Compose file points at the traefik.yaml we just wrote.
+        assert!(tmp.path().join("dynamic").is_dir());
+        // Compose file points at both the static config and dynamic dir.
         let compose_body = std::fs::read_to_string(&compose)?;
         assert!(compose_body.contains("./traefik.yaml:/etc/traefik/traefik.yaml:ro"));
+        assert!(compose_body.contains("./dynamic:/etc/traefik/dynamic:ro"));
+        // No docker.sock mount with file provider.
+        assert!(!compose_body.contains("docker.sock"));
+        Ok(())
+    }
+
+    #[test]
+    fn render_project_dynamic_one_port() {
+        let s = render_project_dynamic("sb-web", "sandbox-abc123", &[3000], "sandbox.local");
+        assert!(s.contains("    sb-sb-web-3000:\n"));
+        assert!(s.contains("rule: \"Host(`sb-web.sandbox.local`)\""));
+        assert!(s.contains("entryPoints: [\"port-3000\"]"));
+        assert!(s.contains("url: \"http://sandbox-abc123:3000\""));
+    }
+
+    #[test]
+    fn render_project_dynamic_two_ports_two_routers_two_services() {
+        let s = render_project_dynamic("api", "sandbox-def", &[3000, 5007], "sandbox.local");
+        // Two routers, two services, all pointing at the same Host.
+        assert_eq!(s.matches("    sb-api-3000:").count(), 2); // once under routers, once under services
+        assert_eq!(s.matches("    sb-api-5007:").count(), 2);
+        assert!(s.contains("url: \"http://sandbox-def:3000\""));
+        assert!(s.contains("url: \"http://sandbox-def:5007\""));
+    }
+
+    #[test]
+    fn render_project_dynamic_empty_ports_yields_empty_string() {
+        assert!(render_project_dynamic("x", "y", &[], "z").is_empty());
+    }
+
+    #[test]
+    fn write_dynamic_configs_clears_stale_files() -> TestResult {
+        let tmp = tempfile::tempdir()?;
+        let dyn_dir = tmp.path().join("dynamic");
+        std::fs::create_dir_all(&dyn_dir)?;
+        // Stale file from a previous run that no longer corresponds to any
+        // active project.
+        std::fs::write(dyn_dir.join("ghost.yaml"), b"# stale\n")?;
+
+        let projects = vec![(
+            "sb-web".to_string(),
+            "sandbox-abc".to_string(),
+            vec![3000_u16],
+        )];
+        let written = write_dynamic_configs(tmp.path(), projects, "sandbox.local")?;
+        assert_eq!(written, vec!["sb-web".to_string()]);
+        assert!(dyn_dir.join("sb-web.yaml").is_file());
+        // Stale file must be gone.
+        assert!(!dyn_dir.join("ghost.yaml").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn write_dynamic_configs_skips_projects_with_no_ports() -> TestResult {
+        let tmp = tempfile::tempdir()?;
+        let projects = vec![
+            ("a".to_string(), "ca".to_string(), vec![3000_u16]),
+            ("b".to_string(), "cb".to_string(), vec![]), // no ports → skipped
+        ];
+        let written = write_dynamic_configs(tmp.path(), projects, "sandbox.local")?;
+        assert_eq!(written, vec!["a".to_string()]);
         Ok(())
     }
 }

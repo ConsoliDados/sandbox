@@ -66,12 +66,8 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
         // first-time creation triggers a one-shot chown init container
         // (alpine, --network none) to remap ownership. Subsequent runs
         // skip the chown entirely.
-        let created = sandbox_docker::ensure_volume_owned(
-            vol.as_str(),
-            ctx.user.uid,
-            ctx.user.gid,
-        )
-        .await?;
+        let created =
+            sandbox_docker::ensure_volume_owned(vol.as_str(), ctx.user.uid, ctx.user.gid).await?;
         if created {
             tracing::info!(
                 volume = vol.as_str(),
