@@ -109,7 +109,7 @@ Branch: `feat/lifecycle-mvp`.
 ### Phase 6 — Runtime network toggle + project compose
 
 - [x] `sandbox net on|off|status PROJECT` — ephemeral toggle (no Meta persistence), table+JSON output, exit 50 on would-strand guard
-- [ ] Project compose detection (glob `**/compose*.y{,a}ml`, `--compose-file` override)
+- [x] Project compose detection — `sandbox-docker::compose::discover` (regex `^(docker-compose|compose).*\.ya?ml$`, depth 4, skip-dir set, multi-match → Error, `--compose-file` override validated + canonicalized)
 - [ ] `sandbox-scan::compose::validate` runs before `docker compose up`
 - [ ] **Registry/namespace allowlist** in compose validator — block non-allowlisted `image:` refs (default allow: `docker.io/library/*`, `ghcr.io/*`; user-extensible via config). Catches typo-squats (`postgress`, `nodee`) and rogue namespaces. Exit 31 in safe; `--unsafe` bypasses.
 - [ ] Sandbox container joins project's compose network (3 networks: internal + proxy + compose)

@@ -1919,13 +1919,16 @@ dependencies = [
 name = "sandbox-docker"
 version = "0.0.1"
 dependencies = [
+ "regex",
  "sandbox-core",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "toml",
  "tracing",
+ "walkdir",
 ]
 
 [[package]]

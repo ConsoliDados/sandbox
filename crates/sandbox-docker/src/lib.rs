@@ -10,6 +10,7 @@
 //! - [`network`] — `--internal` network create + connect/disconnect.
 
 mod cmd;
+pub mod compose;
 mod error;
 pub mod lifecycle;
 pub mod network;
@@ -17,6 +18,7 @@ mod plan;
 pub mod scanner;
 pub mod volume;
 
+pub use compose::{Outcome as ComposeOutcome, discover as discover_compose};
 pub use error::{Error, Result};
 pub use lifecycle::{
     ContainerInfo, ExecOpts, LogsOpts, exec, exists, is_running, list_sandboxes,

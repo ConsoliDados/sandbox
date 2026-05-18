@@ -27,14 +27,17 @@ src/
 ├── volume.rs               named volume ops (ensure / exists / remove)
 ├── network.rs              --internal network create + connect/disconnect
 ├── lifecycle.rs            container ops: exists / is_running / run / start / stop / exec / rm
-└── compose/                (Phase 6 — not yet present)
-    ├── mod.rs              Compose struct + lifecycle
-    ├── parse.rs            compose file parser (subset)
-    └── validate.rs         security validator (calls into sandbox-scan)
+└── compose/                (Phase 6 — incremental)
+    ├── mod.rs              re-exports
+    ├── discover.rs         file discovery (regex + walkdir, ADR-0010 § Decision item 3)
+    ├── parse.rs            compose file parser (subset)              — pending
+    ├── validate.rs         security validator (calls into sandbox-scan) — pending
+    └── lifecycle.rs        `up` / network rewire / `down`            — pending
 ```
 
-Phase 1 ships `Plan`, `lifecycle`, `volume`, `network`. Compose support lands
-in Phase 6 (ADR-0010).
+Phase 1 shipped `Plan`, `lifecycle`, `volume`, `network`. Phase 6 lands
+compose support in slices: `discover` first, then validator wire-up, then
+lifecycle. See `docs/sandbox/roadmap.md` § Phase 6 for the live checklist.
 
 ## Conventions
 
