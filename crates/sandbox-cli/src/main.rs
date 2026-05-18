@@ -168,9 +168,33 @@ enum Command {
 
 #[derive(Subcommand, Debug)]
 enum NetOp {
-    On { project: String },
-    Off { project: String },
-    Status { project: String },
+    /// Attach the default Docker bridge — grants internet egress
+    On {
+        #[arg(default_value = ".")]
+        project: String,
+    },
+    /// Detach the bridge — restores the egress-restricted default
+    Off {
+        #[arg(default_value = ".")]
+        project: String,
+    },
+    /// Report which networks the container is attached to + egress state
+    Status {
+        #[arg(default_value = ".")]
+        project: String,
+        #[arg(long, value_enum, default_value_t = commands::net::Format::Table)]
+        format: commands::net::Format,
+    },
+}
+
+impl From<NetOp> for commands::net::Args {
+    fn from(op: NetOp) -> Self {
+        match op {
+            NetOp::On { project } => Self::On { project },
+            NetOp::Off { project } => Self::Off { project },
+            NetOp::Status { project, format } => Self::Status { project, format },
+        }
+    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -296,6 +320,7 @@ async fn dispatch(cli: Cli) -> Result<()> {
             })
             .await
         }
+        Some(Command::Net { op }) => commands::net::execute(op.into()).await,
         Some(Command::Proxy { op }) => commands::proxy::execute(op.into()).await,
         Some(Command::Scan {
             path,

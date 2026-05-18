@@ -32,6 +32,12 @@ pub(crate) enum Error {
     #[error("sandbox container `{name}` is not running (run `sandbox run` first)")]
     ContainerNotRunning { name: String },
 
+    #[error(
+        "`sandbox net off` would strand `{name}`: bridge is its only network. \
+         The container was started with `--unsafe` / `--network`; use `sandbox down` instead."
+    )]
+    NetOffWouldStrand { name: String },
+
     #[error("scan blocked: {count} finding(s) at severity ≥ {threshold}")]
     ScanBlocked { count: usize, threshold: String },
 
@@ -61,6 +67,7 @@ impl Error {
         match self {
             Error::Clap(_) => 2,
             Error::ContainerNotFound { .. } | Error::ContainerNotRunning { .. } => 40,
+            Error::NetOffWouldStrand { .. } => 50,
             Error::ScanBlocked { .. } | Error::ClamavScanFailed { .. } => 30,
             Error::ClamavDbMissing { .. } => 20,
             _ => 1,

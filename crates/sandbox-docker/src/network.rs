@@ -7,6 +7,10 @@ use crate::{Error, Result};
 
 pub const SANDBOX_INTERNAL: &str = "sandbox-internal";
 
+/// Docker's default `bridge` network. Attached by `sandbox net on` to grant
+/// internet egress at runtime; detached by `sandbox net off`. See ADR-0004.
+pub const BRIDGE: &str = "bridge";
+
 /// Create `name` as an `--internal` network if it doesn't exist.
 pub async fn ensure_internal(name: &str) -> Result<()> {
     if exists(name).await? {
@@ -46,4 +50,26 @@ pub async fn disconnect(network: &str, container: &str) -> Result<()> {
         Err(Error::DockerFailed { stderr, .. }) if stderr.contains("is not connected") => Ok(()),
         Err(e) => Err(e),
     }
+}
+
+/// List the names of every Docker network a container is currently attached
+/// to. Order is whatever `docker inspect` returns (not guaranteed stable, so
+/// callers that compare should sort).
+pub async fn inspect_networks(container: &str) -> Result<Vec<String>> {
+    // The Go template walks `.NetworkSettings.Networks` (a map keyed by
+    // network name) and prints each key on its own line. Empty output means
+    // the container has no network attachments (rare; usually `none`).
+    let stdout = run_capture(&[
+        "inspect",
+        container,
+        "--format",
+        "{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{println}}{{end}}",
+    ])
+    .await?;
+    Ok(stdout
+        .lines()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+        .collect())
 }

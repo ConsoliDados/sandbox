@@ -562,6 +562,105 @@ docker network rm sandbox-proxy   # optional; auto-recreated next start
 
 ---
 
+## Phase 6 — runtime network toggle + project compose
+
+### 6.1 Live: `sandbox net on/off/status` round-trip
+
+**Goal:** confirm the runtime egress toggle attaches and detaches `bridge` against a running safe-mode container, and that `status` reflects the current network attachments.
+
+**Setup:**
+
+```sh
+mkdir -p /tmp/sb-nettoggle && cd /tmp/sb-nettoggle
+echo '{"name":"sb-nettoggle","version":"0.0.1","scripts":{"start":"node -e \"require(\\\"http\\\").get(\\\"http://example.com\\\",r=>console.log(r.statusCode))\""}}' > package.json
+```
+
+**Steps:**
+
+```sh
+$SB run .                              # safe mode by default (sandbox-internal only, no egress)
+# Open a second terminal for the toggle commands while `run` is attached.
+
+$SB net status .                       # expects: sandbox-internal only, egress: off
+# NETWORK            EGRESS  ROLE
+# sandbox-internal   no      primary (no egress)
+#
+# sandbox-<hash>: egress: off
+
+# Inside the first terminal (the sandbox shell):
+npm start                              # fails: getaddrinfo ENOTFOUND example.com (no DNS, no egress)
+
+# Back in the second terminal:
+$SB net on .                           # attaches bridge
+# sandbox-<hash>: egress on (attached bridge)
+
+$SB net status .                       # now lists both networks
+# NETWORK            EGRESS  ROLE
+# bridge             yes     egress (toggle)
+# sandbox-internal   no      primary (no egress)
+#
+# sandbox-<hash>: egress: ON
+
+# Inside the sandbox:
+npm start                              # now prints `200` — egress works
+
+# Disconnect again:
+$SB net off .                          # detaches bridge
+$SB net status . --format json         # machine-readable form
+# {
+#   "container": "sandbox-...",
+#   "egress": false,
+#   "networks": ["sandbox-internal"]
+# }
+```
+
+**Pass criteria:**
+
+- `net on` on a safe container connects bridge and reports `egress on`.
+- `net on` on an already-attached container is idempotent (`egress already on`, no error).
+- `net off` disconnects bridge and `net status` no longer lists it.
+- `net off` on a container without bridge is idempotent (`egress already off`).
+- JSON output round-trips through `jq '.egress'` cleanly.
+
+### 6.2 Headless: error paths (no container / not running / would strand)
+
+**Goal:** the failure modes exit with the codes the SRS promises (40 for not-found / not-running, 50 for the "would strand" guard) and print actionable messages.
+
+**Steps:**
+
+```sh
+# (a) No container — exit 40.
+mkdir -p /tmp/sb-noctr && cd /tmp/sb-noctr
+echo '{"name":"sb-noctr"}' > package.json
+$SB net status .
+echo "exit=$?"                         # exit=40, message points at `sandbox run` first
+
+# (b) Container exists but stopped — exit 40.
+mkdir -p /tmp/sb-stopped && cd /tmp/sb-stopped
+echo '{"name":"sb-stopped"}' > package.json
+$SB run . </dev/null                   # let it exit immediately
+$SB net on .
+echo "exit=$?"                         # exit=40
+
+# (c) Would-strand guard: --unsafe container whose primary IS bridge.
+mkdir -p /tmp/sb-unsafe && cd /tmp/sb-unsafe
+echo '{"name":"sb-unsafe"}' > package.json
+$SB run . --unsafe                     # in another terminal:
+$SB net off .
+echo "exit=$?"                         # exit=50, message tells user to `sandbox down` instead
+```
+
+**Pass criteria:** all three commands exit non-zero with the codes above; messages are self-contained (no stack traces, no Docker error strings leaked verbatim).
+
+### Cleanup
+
+```sh
+$SB down . && $SB nuke . -y
+rm -rf /tmp/sb-nettoggle /tmp/sb-noctr /tmp/sb-stopped /tmp/sb-unsafe
+```
+
+---
+
 ## Cleanup checklist
 
 After running Live recipes, anything you `sandbox run` lives in Docker. Clean up:
