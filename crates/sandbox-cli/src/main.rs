@@ -70,12 +70,28 @@ enum Command {
         /// language manifest's `port_detection` rules run.
         #[arg(long, value_name = "PORT")]
         expose: Vec<u16>,
+
+        /// Bring up the project's `docker-compose` deps alongside the
+        /// sandbox container (ADR-0010). Deps inherit the sandbox's egress
+        /// policy: in safe mode they're moved to a `--internal` network and
+        /// cannot reach the internet; with `--network` they keep the
+        /// compose-default bridge.
+        #[arg(long = "with-deps")]
+        with_deps: bool,
+
+        /// Explicit path to a compose file. Overrides discovery; required
+        /// when discovery finds more than one candidate.
+        #[arg(long = "compose-file", value_name = "PATH")]
+        compose_file: Option<std::path::PathBuf>,
     },
     /// Stop a sandbox container; keep state
     Down {
         project: Option<String>,
         #[arg(long)]
         all: bool,
+        /// Also stop and remove the compose deps brought up by `--with-deps`.
+        #[arg(long = "with-deps")]
+        with_deps: bool,
     },
     /// Remove container, named volumes, and per-project state
     Nuke {
@@ -249,6 +265,8 @@ async fn dispatch(cli: Cli) -> Result<()> {
             no_scan,
             with_clamav,
             expose,
+            with_deps,
+            compose_file,
         }) => {
             commands::run::execute(commands::run::Args {
                 path,
@@ -259,12 +277,23 @@ async fn dispatch(cli: Cli) -> Result<()> {
                 no_scan,
                 with_clamav,
                 expose,
+                with_deps,
+                compose_file,
                 print_cmd: cli.print_cmd,
             })
             .await
         }
-        Some(Command::Down { project, all }) => {
-            commands::down::execute(commands::down::Args { project, all }).await
+        Some(Command::Down {
+            project,
+            all,
+            with_deps,
+        }) => {
+            commands::down::execute(commands::down::Args {
+                project,
+                all,
+                with_deps,
+            })
+            .await
         }
         Some(Command::Nuke {
             project,

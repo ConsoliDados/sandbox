@@ -42,6 +42,16 @@ pub async fn connect(network: &str, container: &str) -> Result<()> {
     Ok(())
 }
 
+/// Remove a Docker network by name. Used to clean up
+/// `sandbox-compose-<hash>` after `sandbox down --with-deps` /
+/// `sandbox nuke`. Returns an error when other containers still attach to
+/// the network — by design: that would indicate the rewire/teardown left
+/// something behind.
+pub async fn rm(name: &str) -> Result<()> {
+    run_capture(&["network", "rm", name]).await?;
+    Ok(())
+}
+
 /// Disconnect a container from a network. Treats "is not connected" as
 /// success.
 pub async fn disconnect(network: &str, container: &str) -> Result<()> {

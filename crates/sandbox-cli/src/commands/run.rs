@@ -7,7 +7,9 @@
 
 use std::path::PathBuf;
 
-use sandbox_core::{Config, LangManifest, LanguageRegistry, Meta, Paths, Profile, Project};
+use sandbox_core::{
+    ComposeMeta, Config, LangManifest, LanguageRegistry, Meta, Paths, Profile, Project,
+};
 use sandbox_docker::{
     ExecOpts, Mount, NetworkSpec, Plan, ResourceSpec, SANDBOX_INTERNAL, SecuritySpec, UserSpec,
 };
@@ -27,6 +29,8 @@ pub(crate) struct Args {
     /// Override port detection: each value becomes a Traefik entryPoint.
     /// When empty we run the manifest's `port_detection` heuristics.
     pub(crate) expose: Vec<u16>,
+    pub(crate) with_deps: bool,
+    pub(crate) compose_file: Option<PathBuf>,
     pub(crate) print_cmd: bool,
 }
 
@@ -41,11 +45,28 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
         return Err(crate::Error::NoScanRequiresUnsafe);
     }
 
-    let ctx = Context::load(&args)?;
-    let plan = build_plan(&ctx);
+    let mut ctx = Context::load(&args)?;
 
     if args.print_cmd {
-        println!("{plan}");
+        // Predict what the compose network name would be so the printed
+        // Plan is faithful end-to-end without actually creating it. Safe
+        // mode → sandbox-compose-<short> (--internal); --network mode →
+        // <project>_default (compose-default bridge, named after the same
+        // project we'd pass to `docker compose -p`).
+        if args.with_deps && ctx.compose_file.is_some() {
+            let net = if ctx.profile.network {
+                format!("{}_default", compose_project_name(&ctx))
+            } else {
+                sandbox_docker::compose_internal_name(ctx.project.hash.short().as_str())
+            };
+            ctx.compose_state = Some(ComposeMeta {
+                file: ctx.compose_file.clone().unwrap_or_default(),
+                project_name: compose_project_name(&ctx),
+                services: Vec::new(),
+                network: net,
+            });
+        }
+        println!("{}", build_plan(&ctx));
         return Ok(());
     }
 
@@ -59,6 +80,9 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
         // user hasn't run `sandbox proxy start` yet. The proxy itself is
         // still opt-in — the labels are inert until Traefik comes up.
         sandbox_docker::ensure_bridge(sandbox_proxy::PROXY_NETWORK).await?;
+    }
+    if args.with_deps {
+        ctx.compose_state = Some(compose_up_flow(&ctx).await?);
     }
     for vol in ctx.project.named_volumes() {
         // Newly-created Docker named volumes are owned by root inside the
@@ -80,6 +104,7 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
     ensure_host_mountpoints(&ctx)?;
     seed_lockfiles(&ctx)?;
 
+    let plan = build_plan(&ctx);
     ensure_running(&ctx, &plan).await?;
     // Persist state as soon as the container exists, before we hand the
     // user a shell — so `sandbox ps` / `sandbox proxy start` see the new
@@ -87,6 +112,74 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
     save_state(&ctx)?;
     attach_shell(&ctx).await?;
     Ok(())
+}
+
+fn compose_project_name(ctx: &Context) -> String {
+    // `sandbox-<short>-deps` keeps the namespace distinct from anything
+    // the user might be running by hand with `docker compose` on the same
+    // file. The `-deps` suffix is the differentiator; the hash keeps it
+    // unique per project.
+    format!("sandbox-{}-deps", ctx.project.hash.short())
+}
+
+/// Bring up the project's compose deps and rewire them so they inherit the
+/// sandbox's egress policy. Idempotent: a re-run of `sandbox run --with-deps`
+/// against an already-up project is a no-op for each step.
+///
+/// Lifecycle (ADR-0010 § Decision item 7):
+///   1. (safe only) `ensure_compose_internal` creates `sandbox-compose-<hash>`.
+///   2. `docker compose -p <name> -f <file> up -d`.
+///   3. Read service container IDs back.
+///   4. (safe only) Rewire each service to the `--internal` network with the
+///      service name as a DNS alias; disconnect from compose-created
+///      networks (so deps lose egress, matching the sandbox itself).
+///   5. (`--network` mode) Skip the rewire; deps stay on
+///      `<project>_default` (compose-managed bridge with egress).
+async fn compose_up_flow(ctx: &Context) -> Result<ComposeMeta> {
+    let file = ctx.compose_file.as_ref().ok_or_else(|| {
+        // Defensive — Context::load already errors if --with-deps was set
+        // without a file. Reaching here means the caller skipped that check.
+        crate::Error::WithDepsNoComposeFile {
+            project: ctx.project.path.display().to_string(),
+        }
+    })?;
+    let project_name = compose_project_name(ctx);
+    let short = ctx.project.hash.short();
+
+    // In safe mode the deps' network must be created BEFORE we read services
+    // back, so the rewire step can target it. In --network mode we don't
+    // touch the network — compose creates its own.
+    let target_network = if ctx.profile.network {
+        format!("{project_name}_default")
+    } else {
+        sandbox_docker::ensure_compose_internal(short.as_str()).await?
+    };
+
+    let file_str = file.to_string_lossy().into_owned();
+    tracing::info!(file = %file.display(), project = %project_name, "bringing up compose deps");
+    sandbox_docker::compose_up(&file_str, &project_name).await?;
+
+    let services = sandbox_docker::compose_services(&project_name).await?;
+
+    if !ctx.profile.network {
+        let pairs: Vec<(String, String)> = services
+            .iter()
+            .map(|s| (s.service.clone(), s.container_id.clone()))
+            .collect();
+        tracing::info!(
+            target_network = %target_network,
+            n = pairs.len(),
+            "rewiring compose deps to --internal network"
+        );
+        sandbox_docker::rewire_to_internal(&target_network, &pairs).await?;
+    }
+
+    Ok(ComposeMeta {
+        file: file.clone(),
+        project_name,
+        services: services.iter().map(|s| s.service.clone()).collect(),
+        network: target_network,
+    })
 }
 
 /// Run YARA + heuristics + compose (and optionally ClamAV) against the
@@ -197,6 +290,15 @@ struct Context {
     /// User-facing project slug used as the Host component of
     /// `<slug>.sandbox.localhost`. Derived from the canonical project path.
     slug: String,
+    /// Resolved compose file path. `Some` when discovery found exactly one
+    /// match or `--compose-file PATH` was given; `None` when the project has
+    /// no compose file. Required to be `Some` if `--with-deps` is set.
+    compose_file: Option<PathBuf>,
+    /// Compose lifecycle state populated by `compose_up_flow` (Stage B).
+    /// `None` until the deps are actually brought up. Read by `build_plan`
+    /// to add the compose network to `additional_networks` and by
+    /// `save_state` to persist `Meta.compose`.
+    compose_state: Option<ComposeMeta>,
 }
 
 impl Context {
@@ -232,6 +334,12 @@ impl Context {
         let lockfile_seeds = lockfile_seed_paths(&paths, &project, &manifest, &profile);
         let ports = sandbox_proxy::detect_ports(&project.path, &manifest, &args.expose)?;
         let slug = sandbox_proxy::slug_from_path(&project.path);
+        let compose_file = resolve_compose_file(&project.path, args)?;
+        if args.with_deps && compose_file.is_none() {
+            return Err(crate::Error::WithDepsNoComposeFile {
+                project: project.path.display().to_string(),
+            });
+        }
         Ok(Self {
             paths,
             project,
@@ -242,8 +350,21 @@ impl Context {
             lockfile_seeds,
             ports,
             slug,
+            compose_file,
+            compose_state: None,
         })
     }
+}
+
+/// Resolve the compose file via `--compose-file` override or the
+/// `sandbox-docker::compose::discover` heuristic. Multi-match bubbles up as
+/// the docker-layer error, asking the user to pass `--compose-file`.
+fn resolve_compose_file(project_root: &std::path::Path, args: &Args) -> Result<Option<PathBuf>> {
+    let outcome = sandbox_docker::discover_compose(project_root, args.compose_file.as_deref())?;
+    Ok(match outcome {
+        sandbox_docker::ComposeOutcome::None => None,
+        sandbox_docker::ComposeOutcome::Found(path) => Some(path),
+    })
 }
 
 /// Compute the (name, host_path) pairs for lockfile bind mounts.
@@ -357,14 +478,16 @@ fn ensure_host_mountpoints(ctx: &Context) -> Result<()> {
 
 fn build_plan(ctx: &Context) -> Plan {
     let mounts = build_mounts(ctx);
-    let (labels, additional_networks) = if ctx.ports.is_empty() {
-        (Vec::new(), Vec::new())
+    let mut additional_networks: Vec<String> = Vec::new();
+    let labels = if ctx.ports.is_empty() {
+        Vec::new()
     } else {
-        (
-            sandbox_proxy::labels_for_project(&ctx.slug, &ctx.ports, sandbox_proxy::DEFAULT_DOMAIN),
-            vec![sandbox_proxy::PROXY_NETWORK.to_string()],
-        )
+        additional_networks.push(sandbox_proxy::PROXY_NETWORK.to_string());
+        sandbox_proxy::labels_for_project(&ctx.slug, &ctx.ports, sandbox_proxy::DEFAULT_DOMAIN)
     };
+    if let Some(compose) = &ctx.compose_state {
+        additional_networks.push(compose.network.clone());
+    }
     Plan {
         image: ctx.manifest.image.clone(),
         container_name: ctx.project.container_name.clone(),
@@ -537,11 +660,14 @@ fn save_state(ctx: &Context) -> Result<()> {
             .map(|(name, _)| name.clone())
             .collect(),
         ports: ctx.ports.clone(),
-        // Preserve any [compose] block from the previous run — `sandbox run`
-        // without `--with-deps` (Stage B) does not touch compose state. The
-        // dedicated --with-deps path overwrites this in commands/run.rs once
-        // it lands.
-        compose: existing.as_ref().and_then(|m| m.compose.clone()),
+        // Prefer the freshly-populated `ctx.compose_state` (set when
+        // `--with-deps` ran the lifecycle this turn); otherwise keep the
+        // previous block intact so a plain `sandbox run` doesn't blow away
+        // the record of deps brought up by a prior `--with-deps`.
+        compose: ctx
+            .compose_state
+            .clone()
+            .or_else(|| existing.as_ref().and_then(|m| m.compose.clone())),
     };
     meta.save(&state_dir)?;
     Ok(())

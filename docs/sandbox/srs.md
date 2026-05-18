@@ -48,6 +48,14 @@ sandbox run [PATH]
     [--expose PORT ...]   Override port detection. Each PORT becomes a Traefik
                           entryPoint reachable as <project>.sandbox.localhost:PORT
                           (e.g. --expose 3000 5007). See ADR-0005.
+    [--with-deps]         Bring up the project's docker-compose deps alongside
+                          the sandbox container (ADR-0010). Deps inherit the
+                          sandbox's egress policy: in safe mode they move to
+                          a `--internal` `sandbox-compose-<hash>` network and
+                          cannot reach the internet; with `--network` they
+                          stay on the compose-default bridge.
+    [--compose-file PATH] Explicit compose file. Overrides discovery; required
+                          when discovery finds more than one candidate.
     [--shell zsh|bash]    Shell to launch (default: zsh, planned)
     [--rebuild]           Force rebuild of the container image (planned)
 ```

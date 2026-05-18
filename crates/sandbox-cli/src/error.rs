@@ -56,6 +56,13 @@ pub(crate) enum Error {
     #[error("reverse proxy is not configured yet — run `sandbox proxy start` first")]
     ProxyNotConfigured,
 
+    #[error(
+        "`--with-deps` was set but no compose file was found in `{project}`. \
+         Pass `--compose-file PATH` to point at a specific file, or drop \
+         `--with-deps` if the project has no deps."
+    )]
+    WithDepsNoComposeFile { project: String },
+
     #[error("not implemented yet (Phase 0 skeleton); see roadmap")]
     NotImplemented,
 }

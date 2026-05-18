@@ -659,6 +659,136 @@ $SB down . && $SB nuke . -y
 rm -rf /tmp/sb-nettoggle /tmp/sb-noctr /tmp/sb-stopped /tmp/sb-unsafe
 ```
 
+### 6.3 Live: `--with-deps` end-to-end (safe mode rewire)
+
+**Goal:** confirm `sandbox run --with-deps` discovers the compose file,
+validates it, brings up the deps via `docker compose`, rewires them to a
+`--internal` network so they lose egress, and attaches the sandbox container
+to the same network so it can talk to `postgres` by name.
+
+**Setup:**
+
+```sh
+mkdir -p /tmp/sb-deps && cd /tmp/sb-deps
+echo '{"name":"sb-deps","version":"0.0.1"}' > package.json
+cat > docker-compose.yml <<'YAML'
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_PASSWORD: dev
+YAML
+```
+
+**Steps:**
+
+```sh
+$SB run . --with-deps
+# In a second terminal:
+$SB ps
+# Should show the sandbox container; meta.toml now records [compose].
+
+cat ~/.local/share/sandbox/containers/$($SB ps --format json | jq -r '.[0].hash')/meta.toml
+# Expect:
+# [compose]
+# file = "/tmp/sb-deps/docker-compose.yml"
+# project_name = "sandbox-<short>-deps"
+# services = ["postgres"]
+# network = "sandbox-compose-<short>"
+
+docker network inspect sandbox-compose-<short> | jq '.[0].Internal'
+# Expect: true
+
+docker network inspect sandbox-compose-<short> | jq '.[0].Containers | keys | length'
+# Expect: 2 (sandbox container + postgres)
+
+# Inside the sandbox shell:
+getent hosts postgres                  # resolves via DNS alias
+nc -z postgres 5432 && echo "reachable"
+node -e "require('http').get('http://example.com', r => console.log(r.statusCode))"
+# Fails with ENOTFOUND — sandbox-internal blocks egress (deps too).
+
+# From the host:
+docker exec sandbox-<short>-deps-postgres-1 \
+  node -e "require('http').get('http://example.com', r => console.log(r.statusCode))" 2>&1
+# Also fails — postgres container has no egress either (rewired to --internal).
+```
+
+**Pass criteria:**
+
+- `meta.toml` includes a `[compose]` block with the four fields.
+- `sandbox-compose-<short>` network exists and is `--internal`.
+- Both sandbox container and postgres are attached to it.
+- Sandbox can resolve `postgres` by DNS and reach port 5432.
+- Neither sandbox nor postgres can reach the internet (matches safe-mode
+  posture).
+
+### 6.4 Live: `--with-deps --network` keeps egress on deps
+
+**Goal:** with `--network`, deps stay on the compose-default bridge and keep
+internet egress — the user opted into widening the trust boundary.
+
+```sh
+$SB run . --with-deps --network
+# Second terminal:
+docker network inspect sandbox-<short>-deps_default | jq '.[0].Internal'
+# Expect: false  (regular bridge, egress allowed)
+
+# Inside the sandbox:
+node -e "require('http').get('http://example.com', r => console.log(r.statusCode))"
+# Now prints 200.
+```
+
+### 6.5 Headless: discovery error paths
+
+**Goal:** `--with-deps` in a project with no compose file errors cleanly;
+multi-match without `--compose-file` errors with the candidate list.
+
+```sh
+# (a) No compose file but --with-deps requested.
+mkdir -p /tmp/sb-no-compose && cd /tmp/sb-no-compose
+echo '{"name":"x"}' > package.json
+$SB run . --with-deps
+echo "exit=$?"                         # exit=1, message points at --compose-file or drop --with-deps
+
+# (b) Multi-match.
+mkdir -p /tmp/sb-multi && cd /tmp/sb-multi
+echo '{"name":"x"}' > package.json
+cp /tmp/sb-deps/docker-compose.yml ./docker-compose.yml
+cp /tmp/sb-deps/docker-compose.yml ./compose.dev.yml
+$SB run . --with-deps
+echo "exit=$?"                         # exit=1, lists both candidates, suggests --compose-file PATH
+```
+
+### 6.6 Live: `down --with-deps` and `nuke` cleanup
+
+**Goal:** the compose deps recorded in `Meta.compose` are torn down by
+`down --with-deps` and (automatically) by `nuke`. The `--internal` network
+we created is removed too; the compose-default bridge (`--network` mode) is
+cleaned up by `docker compose down` itself.
+
+```sh
+# Setup from 6.3.
+$SB run . --with-deps
+$SB down . --with-deps                 # also tears down postgres + removes sandbox-compose-<short>
+docker network inspect sandbox-compose-<short>   # Error: No such network
+
+# Re-up + nuke (the unflagged cleanup path):
+$SB run . --with-deps
+$SB nuke . -y                          # removes container, volumes, state, AND compose deps + network
+```
+
+**Pass criteria:** after `down --with-deps`, `docker compose -p sandbox-<short>-deps ps` is empty and the internal network is gone. After `nuke`, the state dir is gone and `meta.toml` no longer exists.
+
+### Cleanup (Phase 6 compose)
+
+```sh
+$SB nuke /tmp/sb-deps -y 2>/dev/null
+$SB nuke /tmp/sb-no-compose -y 2>/dev/null
+$SB nuke /tmp/sb-multi -y 2>/dev/null
+rm -rf /tmp/sb-deps /tmp/sb-no-compose /tmp/sb-multi
+```
+
 ---
 
 ## Cleanup checklist

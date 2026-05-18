@@ -110,11 +110,11 @@ Branch: `feat/lifecycle-mvp`.
 
 - [x] `sandbox net on|off|status PROJECT` — ephemeral toggle (no Meta persistence), table+JSON output, exit 50 on would-strand guard
 - [x] Project compose detection — `sandbox-docker::compose::discover` (regex `^(docker-compose|compose).*\.ya?ml$`, depth 4, skip-dir set, multi-match → Error, `--compose-file` override validated + canonicalized)
-- [ ] `sandbox-scan::compose::validate` runs before `docker compose up`
-- [x] **Registry/namespace allowlist** in compose validator (`compose/registry_not_allowed`, severity High) — default allow: `docker.io/library/*`, `ghcr.io/*`. Image-ref parser handles tags + `@digest`. User config extension wired together with `--with-deps` (next slice). RULESET_VERSION bumped 2 → 3.
-- [ ] Sandbox container joins project's compose network (3 networks: internal + proxy + compose)
-- [ ] Post-`up` network rewire in safe mode (deps moved to `sandbox-compose-<hash>` `--internal`)
-- [ ] `sandbox down --with-deps` and `sandbox nuke` cleanup compose deps
+- [x] `sandbox-scan::compose::validate` runs before `docker compose up` — pre-flight scan in `sandbox run` already exercises `scan::compose::scan`; with `--with-deps` the same validator gates `compose_up_flow`. Exit 30 (scan blocked) on findings ≥ High.
+- [x] **Registry/namespace allowlist** in compose validator (`compose/registry_not_allowed`, severity High) — default allow: `docker.io/library/*`, `ghcr.io/*`. Image-ref parser handles tags + `@digest`. User config extension still pending. RULESET_VERSION bumped 2 → 3.
+- [x] Sandbox container joins project's compose network (3 networks: internal + proxy + compose) — `Plan.additional_networks` now ingests `ctx.compose_state.network`; same create+connect+start path Phase 5 added.
+- [x] Post-`up` network rewire in safe mode — `sandbox-docker::rewire_to_internal` disconnects each service from compose-default and reconnects to `sandbox-compose-<short>` (`--internal`) with the service name as DNS alias. `--network` mode keeps deps on compose-default bridge.
+- [x] `sandbox down --with-deps` and `sandbox nuke` cleanup compose deps — both read `Meta.compose`; `compose_down` is idempotent; `--internal` network rm is best-effort.
 - [x] ADR-0010 (project compose deps integration) finalized — Accepted 2026-05-16
 
 ### Phase 7 — Hardening + polish
