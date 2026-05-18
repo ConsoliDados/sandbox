@@ -21,6 +21,8 @@ pub struct ComposeFile {
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct Service {
     #[serde(default)]
+    pub image: Option<String>,
+    #[serde(default)]
     pub privileged: Option<bool>,
     #[serde(default)]
     pub network_mode: Option<String>,

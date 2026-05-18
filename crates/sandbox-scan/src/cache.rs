@@ -19,7 +19,10 @@ use crate::{Error, Result};
 /// - v1: initial ruleset (Contagious Interview YARA + heuristics + compose).
 /// - v2: `heuristics/eval_function_constructor` widened to match
 ///   `new (Function.constructor)(…)` parenthesized form.
-pub const RULESET_VERSION: u32 = 2;
+/// - v3: `compose/registry_not_allowed` added (Phase 6, ADR-0010 §
+///   registry allowlist). Default-allows `docker.io/library/*` and
+///   `ghcr.io/*` only.
+pub const RULESET_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Entry {
