@@ -18,14 +18,19 @@ mod plan;
 pub mod scanner;
 pub mod volume;
 
-pub use compose::{Outcome as ComposeOutcome, discover as discover_compose};
+pub use compose::{
+    Outcome as ComposeOutcome, ServiceContainer, discover as discover_compose,
+    down as compose_down, lifecycle as compose_lifecycle, services as compose_services,
+    up as compose_up,
+};
 pub use error::{Error, Result};
 pub use lifecycle::{
     ContainerInfo, ExecOpts, LogsOpts, exec, exists, is_running, list_sandboxes,
     list_sandboxes_args, logs, logs_args, rm, run, start, stop,
 };
 pub use network::{
-    BRIDGE, SANDBOX_INTERNAL, connect, disconnect, ensure_bridge, ensure_internal, inspect_networks,
+    BRIDGE, SANDBOX_INTERNAL, compose_internal_name, connect, disconnect, ensure_bridge,
+    ensure_compose_internal, ensure_internal, inspect_networks, rewire_to_internal,
 };
 pub use plan::{Mount, NetworkSpec, Plan, ResourceSpec, SecuritySpec, UserSpec};
 pub use scanner::{

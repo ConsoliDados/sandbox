@@ -38,6 +38,29 @@ pub struct Meta {
     /// entryPoints. Empty when the project has never opted in.
     #[serde(default)]
     pub ports: Vec<u16>,
+
+    /// Compose deps brought up by `sandbox run --with-deps` (Phase 6, ADR-0010).
+    /// `None` when the project ran without `--with-deps`. Read by
+    /// `sandbox down --with-deps` and `sandbox nuke` to know what to tear
+    /// down — we only touch what we started.
+    #[serde(default)]
+    pub compose: Option<ComposeMeta>,
+}
+
+/// Subset of compose lifecycle state we persist per project.
+///
+/// `network` is the actual Docker network the deps live on after the
+/// `sandbox run` post-`up` rewire — `sandbox-compose-<short>` in safe mode
+/// (created with `--internal`) or `<project_name>_default` in `--network`
+/// mode (compose-created bridge). Cleanup operations use it to decide
+/// whether to `docker network rm` after `compose down`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ComposeMeta {
+    pub file: PathBuf,
+    pub project_name: String,
+    pub services: Vec<String>,
+    pub network: String,
 }
 
 impl Meta {
@@ -131,6 +154,7 @@ mod tests {
             named_volumes: vec!["sandbox-abcdef012345-target".to_string()],
             lockfiles: vec!["Cargo.lock".to_string()],
             ports: vec![],
+            compose: None,
         }
     }
 
@@ -224,6 +248,22 @@ mod tests {
             all.iter().map(|m| m.language.as_str()).collect::<Vec<_>>(),
             vec!["rust"]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn compose_block_roundtrips_when_present() -> TestResult {
+        let tmp = tempfile::tempdir()?;
+        let mut m = fixture();
+        m.compose = Some(ComposeMeta {
+            file: PathBuf::from("/tmp/some-project/docker-compose.yml"),
+            project_name: "sandbox-abcdef-deps".into(),
+            services: vec!["postgres".into(), "redis".into()],
+            network: "sandbox-compose-abcdef".into(),
+        });
+        m.save(tmp.path())?;
+        let loaded = Meta::load(tmp.path())?;
+        assert_eq!(loaded, m);
         Ok(())
     }
 

@@ -18,4 +18,4 @@ pub use lang::{LangManifest, LanguageId, LanguageRegistry, PortDetection};
 pub use paths::Paths;
 pub use profile::Profile;
 pub use project::{ContainerName, NamedVolume, Project};
-pub use state::Meta;
+pub use state::{ComposeMeta, Meta};

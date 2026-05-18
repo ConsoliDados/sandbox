@@ -537,6 +537,11 @@ fn save_state(ctx: &Context) -> Result<()> {
             .map(|(name, _)| name.clone())
             .collect(),
         ports: ctx.ports.clone(),
+        // Preserve any [compose] block from the previous run — `sandbox run`
+        // without `--with-deps` (Stage B) does not touch compose state. The
+        // dedicated --with-deps path overwrites this in commands/run.rs once
+        // it lands.
+        compose: existing.as_ref().and_then(|m| m.compose.clone()),
     };
     meta.save(&state_dir)?;
     Ok(())

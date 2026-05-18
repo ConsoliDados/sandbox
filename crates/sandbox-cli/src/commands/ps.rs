@@ -154,6 +154,7 @@ mod tests {
             named_volumes: vec![],
             lockfiles: vec![],
             ports: vec![],
+            compose: None,
         }
     }
 
