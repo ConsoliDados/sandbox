@@ -32,6 +32,10 @@ Even with the sandbox running, executing `npm i` / `bun i` / `pnpm i` / `cargo b
 
 The rule is: **package managers and build commands run only inside the container** (`sandbox exec` / inside the project shell). The host's job is to start the sandbox, not to operate on the project. `unsafe` mode relaxes the volume mount so the operator may choose to run them on the host once the project is trusted; in `safe` and `paranoid` this is a misuse pattern.
 
+## Inbound exposure via the reverse proxy
+
+When a project port is published (via `--expose` or detection), the Traefik sidecar (ADR-0005) is the **only** thing that binds a host port — project containers carry no `-p` flag and are reached over the `sandbox-proxy` network. Those published ports, and the Traefik dashboard (`api.insecure`), bind to **`127.0.0.1` only by default**, so a service started by untrusted code is reachable from the operator's loopback but **not from the LAN**. This matches the access model: `*.sandbox.localhost` resolves to loopback per RFC 6761. Widening to all interfaces is an explicit opt-out via `proxy.bind_address = "0.0.0.0"`. See [ADR-0012](adrs/0012-localhost-port-binding.md).
+
 ## Trust assumptions
 
 - The user trusts the **`sandbox` binary** they have installed.

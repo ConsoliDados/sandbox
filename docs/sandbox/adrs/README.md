@@ -24,6 +24,7 @@ ADRs capture decisions that have lasting structural consequences. They are short
 | 0009 | Container reuse semantics for `run` / `down` / `nuke` | Accepted | Phase 1 |
 | 0010 | Project compose deps: `--with-deps`, three networks, egress mirrors profile | Accepted | Phase 6 |
 | 0011 | Typed errors throughout (no anyhow) | Accepted | Phase 1 |
+| 0012 | Reverse-proxy published ports bind to loopback by default | Accepted | Phase 7 |
 
 ## Template
 
