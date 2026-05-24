@@ -164,3 +164,18 @@ See `open-questions.md` and `sad.md` "Future directions". Notably:
 Items previously listed here but now tracked as future phases:
 
 - **Image supply chain (signing, CVE, layer scan)** — moved to Phase 8 backlog above. Blocked on OQ-008.
+
+## v0.1.0 release track
+
+The first distributable binary. Pre-release security review is done (no critical blocker) and
+the remaining work is captured as an ordered backlog. See:
+
+- [security-review-v0.1.md](security-review-v0.1.md) — pre-release audit + verdict.
+- [release-v0.1-backlog.md](release-v0.1-backlog.md) — ordered workstreams: close Phase 6,
+  bind-localhost hardening (ADR-0012), `lang`/`config`, and release engineering (CI, crates.io,
+  install script).
+- [release-runbook.md](release-runbook.md) — crate-name reservations and the publish procedure.
+- [ADR-0012](adrs/0012-localhost-port-binding.md) — proxy ports bind to loopback by default.
+
+Distribution: published to crates.io as `sandbox-cli` (binary stays `sandbox`) **and** prebuilt
+binaries via CI, with `install.sh` and `cargo install`.
