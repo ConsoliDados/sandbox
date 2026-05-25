@@ -4,11 +4,11 @@ Source of truth for "what's done, what's next, where are we." A fresh session sh
 
 ## Current status
 
-**Phase 5 — reverse proxy.** In progress on `feat/phase-5-reverse-proxy`. Phase 4 merged into `dev` via PR #3 (2026-05-15).
+**Phase 6 — runtime network toggle + project compose.** In progress on `feat/phase-6-network-toggle`. Phase 5 (reverse proxy) merged into `dev` via PR #4.
 
 `sandbox run/down/nuke/ps/logs/exec/scan/proxy` are wired end-to-end against a real Docker daemon. Pre-flight scan runs before `docker run` in safe/paranoid (`--with-clamav` adds the AV motor); blocking findings (severity ≥ High) exit 30. `sandbox proxy start` brings up Traefik with one entryPoint per registered port; project containers join both `sandbox-internal` (egress restricted) and `sandbox-proxy` (Traefik routing). Reachable via `<slug>.sandbox.localhost:<PORT>` — `.localhost` resolves to loopback per RFC 6761, so no `/etc/hosts` edits needed.
-172 tests pass headlessly (42 core + 18 docker + 68 scan + 32 proxy + 6 cli unit + 6 cli integration);
-tests that drive Docker for real are behind the `docker-tests` feature.
+
+Phase 6 adds, on this branch: `sandbox net on|off|status` (runtime egress toggle by attaching/detaching `bridge`), project compose deps via `sandbox run --with-deps` (rewired onto an `--internal` network in safe mode), the compose registry allowlist scan rule, and `sandbox attach` — re-enter a running sandbox's shell without re-scanning (exiting the shell leaves the container running; PID 1 is a keepalive). 200+ tests pass headlessly; tests that drive Docker for real are behind the `docker-tests` feature.
 
 ## Phases
 
@@ -109,6 +109,7 @@ Branch: `feat/lifecycle-mvp`.
 ### Phase 6 — Runtime network toggle + project compose
 
 - [x] `sandbox net on|off|status PROJECT` — ephemeral toggle (no Meta persistence), table+JSON output, exit 50 on would-strand guard
+- [x] `sandbox attach [PATH]` (alias `shell`) — re-enter a running sandbox's shell via `docker exec`, no scan, no auto-start; missing/stopped → exit 40. Pairs with the keepalive PID 1 (`exit` no longer kills the container).
 - [x] Project compose detection — `sandbox-docker::compose::discover` (regex `^(docker-compose|compose).*\.ya?ml$`, depth 4, skip-dir set, multi-match → Error, `--compose-file` override validated + canonicalized)
 - [x] `sandbox-scan::compose::validate` runs before `docker compose up` — pre-flight scan in `sandbox run` already exercises `scan::compose::scan`; with `--with-deps` the same validator gates `compose_up_flow`. Exit 30 (scan blocked) on findings ≥ High.
 - [x] **Registry/namespace allowlist** in compose validator (`compose/registry_not_allowed`, severity High) — default allow: `docker.io/library/*`, `ghcr.io/*`. Image-ref parser handles tags + `@digest`. User config extension still pending. RULESET_VERSION bumped 2 → 3.

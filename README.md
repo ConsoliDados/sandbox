@@ -2,7 +2,7 @@
 
 Isolated, **secure-by-default** development environments in Docker for untrusted code (job interview challenges, OSS contributions, AI-generated code, etc.).
 
-> **Status:** 🟢 Phases 1–5 shipped on `dev` — full lifecycle, observability, three-motor scan pipeline (YARA + heuristics + compose + ClamAV), and a Traefik reverse proxy with `<slug>.sandbox.localhost:<PORT>` routing. See [`docs/sandbox/roadmap.md`](docs/sandbox/roadmap.md).
+> **Status:** 🟢 Phases 1–5 shipped on `dev` — full lifecycle, observability, three-motor scan pipeline (YARA + heuristics + compose + ClamAV), and a Traefik reverse proxy with `<slug>.sandbox.localhost:<PORT>` routing. 🟡 Phase 6 — runtime egress toggle (`sandbox net on/off`), project compose deps (`--with-deps`), and the `sandbox attach` re-entry command — is on `feat/phase-6-network-toggle`, landing next. See [`docs/sandbox/roadmap.md`](docs/sandbox/roadmap.md).
 
 ## Why
 
@@ -25,29 +25,43 @@ sandbox scan . --with-clamav
 # Trust the project — full read/write, full network, scan skipped
 sandbox run . --unsafe
 
-# Trust just the network for this run
+# Trust just the network for this run (internet egress at boot)
 sandbox run . --network
+
+# Re-enter a sandbox you exited (it's still running) — no re-scan
+sandbox attach .
+
+# Toggle internet on/off at runtime, from the host, without restarting
+sandbox net on .
+sandbox net off .
 ```
+
+> **`--network` vs `net`?** Both grant the *same* thing — internet egress —
+> just at different times: `--network` at boot, `sandbox net on` at runtime on a
+> live container. The always-on `sandbox-internal` network (no egress) is the
+> default. Full model in [`docs/sandbox/usage.md`](docs/sandbox/usage.md#the-network-model).
 
 ## Subcommands
 
 | Command | Purpose |
 |---|---|
 | `sandbox run [PATH]` | Start (or resume) sandbox for a project (pre-flight scan in safe/paranoid) |
-| `sandbox down [PROJECT]` | Stop sandbox container; keep state |
+| `sandbox run [PATH] --with-deps [--compose-file F]` | Also bring up the project's compose deps (inherit egress policy) |
+| `sandbox attach [PATH]` | Re-enter a running sandbox's shell — no re-scan (alias: `shell`) |
+| `sandbox down [PROJECT]` | Stop sandbox container; keep state (alias: `stop`) |
 | `sandbox nuke [PROJECT]` | Remove container + named volumes + state (`-y` skips prompt) |
 | `sandbox ps [--all] [--format json\|table]` | List sandboxes |
 | `sandbox logs PROJECT [-f] [--tail N] [--since DUR]` | Tail sandbox container logs |
 | `sandbox exec PROJECT [--user U] [--workdir P] -- CMD` | Run a command inside the running sandbox |
 | `sandbox scan [PATH] [--with-clamav] [--explain] [--format json\|table]` | Run security scan without launching |
 | `sandbox scan --update-db` | Refresh ClamAV signature DB |
-| `sandbox net on\|off PROJECT` | Toggle internet egress at runtime (Phase 6) |
-| `sandbox lang list\|show NAME\|add FILE` | Manage language manifests (Phase 7) |
+| `sandbox net on\|off\|status PROJECT` | Toggle internet egress at runtime (boot-time opt-in is `run --network`) |
 | `sandbox proxy start\|stop\|status\|logs` | Control the Traefik reverse proxy sidecar |
 | `sandbox run --expose PORT...` | Override port detection (proxy entryPoints) |
-| `sandbox config edit\|show\|path` | Edit/show config (Phase 7) |
+| `sandbox lang list\|show NAME\|add FILE` | Manage language manifests _(scaffolded; not yet implemented)_ |
+| `sandbox config edit\|show\|path` | Edit/show config _(scaffolded; not yet implemented)_ |
 
-Full surface and semantics in [`docs/sandbox/srs.md`](docs/sandbox/srs.md). Exit codes are documented there too (notably 30 for scan-blocked, 40 for container-not-found, 20 for ClamAV DB missing).
+Day-to-day usage and the network model live in [`docs/sandbox/usage.md`](docs/sandbox/usage.md); the formal CLI contract is [`docs/sandbox/srs.md`](docs/sandbox/srs.md). Exit codes: 30 scan-blocked, 40 container-not-found/not-running, 20 ClamAV DB missing, 50 `net off` would-strand.
 
 ## Repository shape
 
@@ -79,7 +93,7 @@ Each crate has its own `AGENTS.md` describing responsibility and conventions.
 
 ```sh
 cargo build --workspace                                       # build all crates
-cargo test  --workspace                                       # 172 passing on Phase 5
+cargo test  --workspace                                       # 200+ passing
 cargo fmt   --check                                           # silent = clean
 cargo clippy --workspace --all-targets -- -D warnings         # silent = clean
 bash scripts/dev/lint.sh                                      # combines fmt + clippy
@@ -131,8 +145,9 @@ Priority reading order (see [`AGENTS.md`](AGENTS.md) for the canonical chain):
 4. [`docs/sandbox/playbook.md`](docs/sandbox/playbook.md) — code conventions
 5. [`docs/sandbox/roadmap.md`](docs/sandbox/roadmap.md) — phases and current status
 6. [`docs/sandbox/smoke-tests.md`](docs/sandbox/smoke-tests.md) — recipes for verifying every feature
-7. [`docs/sandbox/usage-flow.md`](docs/sandbox/usage-flow.md) — the trust-dial as a user story
-8. [`docs/sandbox/adrs/`](docs/sandbox/adrs/) — architectural decisions
+7. [`docs/sandbox/usage.md`](docs/sandbox/usage.md) — command-by-command reference + the network model
+8. [`docs/sandbox/usage-flow.md`](docs/sandbox/usage-flow.md) — the trust-dial as a user story
+9. [`docs/sandbox/adrs/`](docs/sandbox/adrs/) — architectural decisions
 
 ## Author
 

@@ -35,6 +35,13 @@ The recipes below assume `$SB` is set.
 
 ## Phase 1 — lifecycle MVP
 
+**Session setup** — run once per shell, then every `$SB …` recipe below works:
+
+```sh
+cd ~/Dev/projects/sandbox && cargo build --workspace
+SB="$(pwd)/target/debug/sandbox"
+```
+
 ### 1.1 Headless: `run --print-cmd` on a fresh node project
 
 ```sh
@@ -61,27 +68,37 @@ $SB --print-cmd run /tmp/sb-bun
 
 Expect `oven/bun:1.3.6` as the image (priority 10 vs node's 0). Validates the `priority` tie-breaker from OQ-005.
 
-### 1.3 Live: full run → exec → down → nuke cycle
+### 1.3 Live: full run → exit → re-enter → down → nuke cycle
 
 ```sh
 mkdir -p /tmp/sb-life && echo '{"name":"itest"}' > /tmp/sb-life/package.json
-$SB run /tmp/sb-life                  # drops into bash inside /app
+$SB run /tmp/sb-life                  # scans, then drops into bash inside /app
 # inside the container:
 ls -la /app                            # see package.json
-exit                                   # leaves container in `exited` state
+exit                                   # shell ends — container STAYS running (PID 1 = sleep infinity)
 
-$SB exec /tmp/sb-life -- whoami       # ERROR: container not running (exit 40)
-$SB run /tmp/sb-life                  # restarts (uses docker start, not run)
-$SB exec /tmp/sb-life -- ls /app      # works now
+$SB exec /tmp/sb-life -- whoami       # works — container is still up
+$SB attach /tmp/sb-life               # hop back into the shell (no re-scan); `exit` again
 $SB down /tmp/sb-life                 # stop, keep state/volumes
+$SB exec /tmp/sb-life -- whoami       # NOW errors: container not running (exit 40)
+$SB run /tmp/sb-life                  # wakes it (docker start) + re-scans; `exit`
 $SB nuke /tmp/sb-life -y              # remove everything
 ```
 
-State lives at `~/.local/share/sandbox/containers/<hash>/meta.toml`; `nuke` clears it.
+`exit` only ends the `docker exec` shell — the container keeps running until
+`sandbox down`. State lives at `~/.local/share/sandbox/containers/<hash>/meta.toml`;
+`nuke` clears it. (See 6.8 for the dedicated `attach` recipe.)
 
 ---
 
 ## Phase 2 — volume strategy + network isolation
+
+**Session setup** — run once per shell, then every `$SB …` recipe below works:
+
+```sh
+cd ~/Dev/projects/sandbox && cargo build --workspace
+SB="$(pwd)/target/debug/sandbox"
+```
 
 ### 2.1 Headless: source is RO in safe, RW under `--unsafe`
 
@@ -121,19 +138,29 @@ $SB --print-cmd run /tmp/sb-vol --network | grep -E "(:/app:ro|--network bridge)
 
 ## Phase 3 — lifecycle observability
 
+**Session setup** — run once per shell, then every `$SB …` recipe below works:
+
+```sh
+cd ~/Dev/projects/sandbox && cargo build --workspace
+SB="$(pwd)/target/debug/sandbox"
+```
+
 ### 3.1 Live: `ps` filters running by default, `--all` shows everything
 
 ```sh
 mkdir -p /tmp/sb-ps && echo '{"name":"itest"}' > /tmp/sb-ps/package.json
-$SB run /tmp/sb-ps; exit             # creates + immediately exits
+$SB run /tmp/sb-ps                    # creates + drops you in; type `exit`
+# (exit leaves the container RUNNING — PID 1 is a keepalive)
 
-$SB ps                                # → "no sandbox containers" (filtered)
+$SB ps                                # → table lists sandbox-<hash>, STATUS=running
+$SB down /tmp/sb-ps                   # stop it (state kept)
+$SB ps                                # → "no sandbox containers" (running filter hides stopped)
 $SB ps --all                          # → table with STATUS=exited
 $SB ps --all --format json            # → JSON array with state="exited"
 $SB nuke /tmp/sb-ps -y
 ```
 
-Columns: `NAME | HASH | LANG | PATH | STATUS | NETWORK | UPTIME | DEPS`. DEPS is `—` until Phase 6.
+Columns: `NAME | HASH | LANG | PATH | STATUS | NETWORK | UPTIME | DEPS`. DEPS lists compose deps brought up via `--with-deps` (Phase 6); `—` when the project has none.
 
 ### 3.2 Live: exit code 40 on `logs`/`exec` against missing container
 
@@ -157,6 +184,13 @@ $SB nuke /tmp/sb-exit -y              # no prompt
 ---
 
 ## Phase 4a — static scan pipeline (YARA + heuristics + compose)
+
+**Session setup** — run once per shell, then every `$SB …` recipe below works:
+
+```sh
+cd ~/Dev/projects/sandbox && cargo build --workspace
+SB="$(pwd)/target/debug/sandbox"
+```
 
 ### 4.1 Headless: clean project exits 0
 
@@ -319,6 +353,13 @@ $SB scan /tmp/sb-evil --format json | head -10
 
 ## Phase 4b — ClamAV motor
 
+**Session setup** — run once per shell, then every `$SB …` recipe below works:
+
+```sh
+cd ~/Dev/projects/sandbox && cargo build --workspace
+SB="$(pwd)/target/debug/sandbox"
+```
+
 ClamAV runs in an ephemeral docker container; first use builds the bundled scanner image locally (no registry push) and downloads ~300 MB of signatures.
 
 ### 4b.1 Live: build image + refresh signature DB
@@ -381,6 +422,13 @@ $SB run /tmp/sb-evil --with-clamav
 ---
 
 ## Phase 5 — reverse proxy
+
+**Session setup** — run once per shell, then every `$SB …` recipe below works:
+
+```sh
+cd ~/Dev/projects/sandbox && cargo build --workspace
+SB="$(pwd)/target/debug/sandbox"
+```
 
 Hostname model is `<slug>.sandbox.localhost:<PORT>` per ADR-0005. Each port the
 project exposes becomes a Traefik entryPoint that binds on the host; the
@@ -564,7 +612,22 @@ docker network rm sandbox-proxy   # optional; auto-recreated next start
 
 ## Phase 6 — runtime network toggle + project compose
 
-### 6.1 Live: `sandbox net on/off/status` round-trip
+**Session setup** — run once per shell, then every `$SB …` recipe below works:
+
+```sh
+cd ~/Dev/projects/sandbox && cargo build --workspace
+SB="$(pwd)/target/debug/sandbox"
+```
+
+> **Re-entry & the two verbs.** Get comfortable with `attach` first (recipes
+> **6.7** headless and **6.8** live) — it's how you hop back into a running
+> sandbox while testing the toggle. The split matters here:
+> - `sandbox attach` **preserves** container state (no scan, no network changes).
+> - `sandbox run` is **authoritative**: it re-enforces the profile's network
+>   policy, so a default `run` *revokes* a leftover `sandbox net on`. Use `run`
+>   to (re)apply policy, `attach` to peek back in without disturbing it.
+
+### 6.1 Live: `sandbox net on/off/status` round-trip + `run` re-enforces policy
 
 **Goal:** confirm the runtime egress toggle attaches and detaches `bridge` against a running safe-mode container, and that `status` reflects the current network attachments.
 
@@ -578,49 +641,46 @@ echo '{"name":"sb-nettoggle","version":"0.0.1","scripts":{"start":"node -e \"req
 **Steps:**
 
 ```sh
-$SB run .                              # safe mode by default (sandbox-internal only, no egress)
-# Open a second terminal for the toggle commands while `run` is attached.
+$SB run .                              # safe mode by default (sandbox-internal, no egress)
+# Run the `net` commands from a SECOND terminal while this shell is open.
 
-$SB net status .                       # expects: sandbox-internal only, egress: off
-# NETWORK            EGRESS  ROLE
-# sandbox-internal   no      primary (no egress)
-#
-# sandbox-<hash>: egress: off
+$SB net status .                       # sandbox-internal (+ sandbox-proxy), egress: off
+npm start                              # inside the shell: fails — getaddrinfo EAI_AGAIN (no egress)
 
-# Inside the first terminal (the sandbox shell):
-npm start                              # fails: getaddrinfo ENOTFOUND example.com (no DNS, no egress)
-
-# Back in the second terminal:
-$SB net on .                           # attaches bridge
-# sandbox-<hash>: egress on (attached bridge)
-
-$SB net status .                       # now lists both networks
-# NETWORK            EGRESS  ROLE
-# bridge             yes     egress (toggle)
-# sandbox-internal   no      primary (no egress)
-#
-# sandbox-<hash>: egress: ON
-
-# Inside the sandbox:
-npm start                              # now prints `200` — egress works
-
-# Disconnect again:
+$SB net on .                           # attaches bridge → "egress on (attached bridge)"
+$SB net status .                       # now lists bridge too; "egress: ON"
+npm start                              # inside the shell: prints `200` — egress works
 $SB net off .                          # detaches bridge
-$SB net status . --format json         # machine-readable form
-# {
-#   "container": "sandbox-...",
-#   "egress": false,
-#   "networks": ["sandbox-internal"]
-# }
+$SB net status . --format json         # {"egress": false, "networks": ["sandbox-internal", ...]}
+```
+
+Now show that **`run` re-enforces policy** while **`attach` preserves it** —
+the part that bit us (the toggle survives `down`, so a plain resume would keep
+egress):
+
+```sh
+$SB net on .                           # egress ON
+exit                                   # leave the shell — container stays running
+$SB down .                             # stop it (state kept). The bridge stays attached…
+$SB net status .                       # …egress: ON  (the toggle survived `down`)
+
+$SB run .                              # DEFAULT run → reconciles to the profile (no egress)
+$SB net status .                       # egress: off  ← run revoked the stale `net on`
+exit
+
+# Contrast: attach does NOT touch the network.
+$SB net on .                           # egress ON again
+$SB attach .                           # re-enter WITHOUT changing policy
+$SB net status .                       # egress: ON  (attach preserved it)
 ```
 
 **Pass criteria:**
 
-- `net on` on a safe container connects bridge and reports `egress on`.
-- `net on` on an already-attached container is idempotent (`egress already on`, no error).
-- `net off` disconnects bridge and `net status` no longer lists it.
-- `net off` on a container without bridge is idempotent (`egress already off`).
-- JSON output round-trips through `jq '.egress'` cleanly.
+- `net on` connects bridge (`egress on`); idempotent on re-run (`egress already on`).
+- `net off` disconnects bridge; idempotent (`egress already off`); JSON `egress` field flips.
+- The toggle **survives `down`** (status still shows bridge on the stopped container).
+- A default `sandbox run` **revokes** a stale `net on` (egress back to off) — `run` is authoritative.
+- `sandbox attach` **does not** change egress — it preserves whatever state the container is in.
 
 ### 6.2 Headless: error paths (no container / not running / would strand)
 
@@ -636,11 +696,15 @@ $SB net status .
 echo "exit=$?"                         # exit=40, message points at `sandbox run` first
 
 # (b) Container exists but stopped — exit 40.
+#     NOTE: `run </dev/null` does NOT stop the container — PID 1 is a keepalive,
+#     so it keeps running in the background (stdin isn't a TTY, so no shell is
+#     attached). You must `down` it to reach the not-running path.
 mkdir -p /tmp/sb-stopped && cd /tmp/sb-stopped
 echo '{"name":"sb-stopped"}' > package.json
-$SB run . </dev/null                   # let it exit immediately
+$SB run . </dev/null                   # container starts in BG (no shell: stdin not a TTY)
+$SB down .                             # now actually stopped
 $SB net on .
-echo "exit=$?"                         # exit=40
+echo "exit=$?"                         # exit=40 (not running)
 
 # (c) Would-strand guard: --unsafe container whose primary IS bridge.
 mkdir -p /tmp/sb-unsafe && cd /tmp/sb-unsafe
@@ -779,6 +843,112 @@ $SB nuke . -y                          # removes container, volumes, state, AND 
 ```
 
 **Pass criteria:** after `down --with-deps`, `docker compose -p sandbox-<short>-deps ps` is empty and the internal network is gone. After `nuke`, the state dir is gone and `meta.toml` no longer exists.
+
+### 6.7 Headless: `attach --print-cmd` renders the manifest shell
+
+**Goal:** `attach` builds the same `docker exec` invocation the shell re-entry uses — host user, manifest workdir, manifest shell — without touching Docker.
+
+```sh
+mkdir -p /tmp/sb-attach && cd /tmp/sb-attach
+echo '{"name":"sb-attach"}' > package.json
+$SB attach --print-cmd .
+# docker exec --interactive --tty --user <uid>:<gid> --workdir /app sandbox-<hash> /bin/bash
+```
+
+**Pass criteria:** prints a `docker exec` line ending in the manifest shell (`/bin/bash` for node), with `--user <uid>:<gid>` and the manifest `--workdir`. Exit 0, no daemon contact.
+
+### 6.8 Live: `sandbox attach` re-entry (running only; no scan; no auto-start)
+
+**Goal:** confirm `attach` re-enters a running sandbox without re-scanning, that exiting the shell leaves the container up, and that a stopped/missing container is refused with exit 40 (you must `sandbox run` to wake it).
+
+**Steps:**
+
+```sh
+mkdir -p /tmp/sb-attach && cd /tmp/sb-attach
+echo '{"name":"sb-attach"}' > package.json
+
+$SB run .                              # scans, then drops you in the shell
+exit                                   # leaves the container RUNNING (PID 1 = sleep infinity)
+$SB ps                                 # sandbox-<hash> still listed as running
+
+$SB attach .                           # back in the shell instantly — no scan output this time
+exit                                   # still running
+$SB attach .                           # repeatable as many times as you like
+
+# Stopped container is refused — waking it must go through `run` (which re-scans):
+$SB down .                             # stops, keeps state
+$SB attach .
+echo "exit=$?"                         # exit=40, message points at `sandbox run` first
+$SB run .                              # re-scans and resumes; exit the shell again
+
+# Missing container:
+mkdir -p /tmp/sb-attach-none && cd /tmp/sb-attach-none
+echo '{"name":"none"}' > package.json
+$SB attach .
+echo "exit=$?"                         # exit=40
+```
+
+**Pass criteria:**
+
+- `attach` on a running container re-enters the shell and emits **no scan output** (contrast with `run`).
+- Exiting the shell leaves the container running (`ps` still shows it); attach/exit is repeatable indefinitely.
+- `attach` against a stopped container exits 40 (never auto-starts it).
+- `attach` against a never-created container exits 40.
+
+**Cleanup:**
+
+```sh
+$SB nuke /tmp/sb-attach -y 2>/dev/null
+rm -rf /tmp/sb-attach /tmp/sb-attach-none
+```
+
+### 6.9 Live: exposing a port does NOT grant egress (proxy-network isolation)
+
+**Goal:** regression guard for the egress leak — a safe-mode project that
+exposes a port joins `sandbox-proxy`, but that network is `--internal`, so the
+sandbox still can't reach the internet. (Before the fix, node's `default_port`
+silently put the container on an egress-capable proxy bridge.)
+
+> **One-time migration:** if you ran an older build, the `sandbox-proxy` network
+> may still exist as a non-internal bridge. Remove it once so `ensure_internal`
+> recreates it correctly: `$SB proxy stop 2>/dev/null; docker network rm sandbox-proxy 2>/dev/null` (stop any sandbox on it first).
+
+**Steps:**
+
+```sh
+mkdir -p /tmp/sb-egress && cd /tmp/sb-egress
+# Node project, no server code — default_port (3000) alone makes it join sandbox-proxy.
+echo '{"name":"sb-egress","scripts":{"start":"node -e \"require(\\\"http\\\").get(\\\"http://example.com\\\",r=>console.log(r.statusCode)).on(\\\"error\\\",e=>console.log(\\\"blocked\\\",e.code))\""}}' > package.json
+
+$SB run .
+$SB net status .                       # sandbox-internal + sandbox-proxy, egress: off
+
+# verify the proxy network really is internal:
+docker network inspect sandbox-proxy --format '{{.Internal}}'   # → true
+
+# inside the sandbox shell:
+npm start                              # → "blocked EAI_AGAIN" (NOT a 200)
+exit
+
+# egress still toggles on demand:
+$SB net on .
+$SB exec . -- node -e "require('http').get('http://example.com',r=>console.log('now',r.statusCode))"  # → now 200
+$SB net off .
+```
+
+**Pass criteria:**
+
+- `docker network inspect sandbox-proxy --format '{{.Internal}}'` prints `true`.
+- `npm start` inside the sandbox **fails** (`EAI_AGAIN` / no `200`) despite the port being exposed.
+- `sandbox net on` still grants egress (200), `net off` revokes it.
+- Proxy routing is unaffected (see 5.5 round-trip — Traefik reaches the container over the internal `sandbox-proxy`).
+
+**Cleanup:**
+
+```sh
+$SB nuke /tmp/sb-egress -y 2>/dev/null
+rm -rf /tmp/sb-egress
+```
 
 ### Cleanup (Phase 6 compose)
 
