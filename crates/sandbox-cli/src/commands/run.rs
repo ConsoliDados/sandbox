@@ -5,6 +5,7 @@
 //! - container stopped → `docker start` then exec
 //! - container missing → build a `Plan` from project + profile, `docker run`
 
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 use sandbox_core::{
@@ -79,7 +80,13 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
         // `lifecycle::run` can't fail with "network not found" when the
         // user hasn't run `sandbox proxy start` yet. The proxy itself is
         // still opt-in — the labels are inert until Traefik comes up.
-        sandbox_docker::ensure_bridge(sandbox_proxy::PROXY_NETWORK).await?;
+        //
+        // `--internal`: the sandbox joins this network at create time, so it
+        // must NOT grant egress, else every port-exposing project would reach
+        // the internet in safe mode (ADR-0004). Traefik bridges inbound from
+        // the host's default `bridge`; routing to the sandbox is
+        // container-to-container over this internal network.
+        sandbox_docker::ensure_internal(sandbox_proxy::PROXY_NETWORK).await?;
     }
     if args.with_deps {
         ctx.compose_state = Some(compose_up_flow(&ctx).await?);
@@ -106,11 +113,29 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
 
     let plan = build_plan(&ctx);
     ensure_running(&ctx, &plan).await?;
+    // `run` is authoritative on egress: reconcile to the profile so a default
+    // (safe) run revokes a leftover `sandbox net on` from a prior session — the
+    // bridge survives `sandbox down`, so a plain `docker start` would otherwise
+    // resume with egress still on. `attach` is the verb that preserves state.
+    sandbox_docker::reconcile_egress(ctx.project.container_name.as_str(), ctx.profile.network)
+        .await?;
     // Persist state as soon as the container exists, before we hand the
     // user a shell — so `sandbox ps` / `sandbox proxy start` see the new
     // ports even if the exec attach fails (e.g. non-TTY stdin).
     save_state(&ctx)?;
-    attach_shell(&ctx).await?;
+    // Only drop into an interactive shell when stdin is a real terminal. A
+    // scripted/piped run (`run . </dev/null`) would otherwise hit `docker exec
+    // -it`'s "cannot attach stdin to a TTY" error; instead leave the container
+    // running (egress already reconciled) and print how to attach.
+    if std::io::stdin().is_terminal() {
+        attach_shell(&ctx).await?;
+    } else {
+        println!(
+            "container ready: {} — attach with `sandbox attach {}`",
+            ctx.project.container_name.as_str(),
+            args.path.display()
+        );
+    }
     Ok(())
 }
 
@@ -212,10 +237,14 @@ async fn pre_flight_scan(ctx: &Context, args: &Args) -> Result<()> {
         .filter(|f| f.severity >= sandbox_scan::Severity::High)
         .collect();
     if blocking.is_empty() {
+        // Always log, even at zero findings — a silent clean scan reads like
+        // "the scan didn't run". `total` distinguishes "nothing found" from
+        // "found non-blocking findings we let through".
         let total = report.findings.len();
-        if total > 0 {
-            tracing::info!(total, "scan clean of blocking findings");
-        }
+        tracing::info!(
+            total,
+            "scan passed — no blocking findings (severity ≥ High)"
+        );
         return Ok(());
     }
     eprintln!(

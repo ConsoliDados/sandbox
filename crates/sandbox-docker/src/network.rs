@@ -11,24 +11,42 @@ pub const SANDBOX_INTERNAL: &str = "sandbox-internal";
 /// internet egress at runtime; detached by `sandbox net off`. See ADR-0004.
 pub const BRIDGE: &str = "bridge";
 
-/// Create `name` as an `--internal` network if it doesn't exist.
+/// Ensure `name` exists and is an `--internal` network (no internet egress).
+///
+/// If a network by that name already exists but is **not** internal, it is
+/// recreated as internal. This matters for `sandbox-proxy`: older builds
+/// created it as a regular bridge (egress-allowed), which silently leaked
+/// internet access to every port-exposing sandbox (see ADR-0004). Recreation
+/// fails loudly if containers are still attached — stop them first
+/// (`sandbox down` / `sandbox proxy stop`).
 pub async fn ensure_internal(name: &str) -> Result<()> {
     if exists(name).await? {
-        return Ok(());
+        if is_internal(name).await? {
+            return Ok(());
+        }
+        rm(name).await?;
     }
     run_capture(&["network", "create", "--internal", name]).await?;
     Ok(())
 }
 
 /// Create `name` as a regular (egress-allowed) bridge network if missing.
-/// Used by the reverse proxy: Traefik needs to reach project containers
-/// **and** host packets routed in, so this network must not be `--internal`.
+/// Reserved for the post-MVP dedicated proxy edge network; the reverse proxy
+/// currently reaches the host via Docker's default `bridge` and routes to
+/// sandboxes over the `--internal` `sandbox-proxy` network. See ADR-0004.
+#[allow(dead_code)]
 pub async fn ensure_bridge(name: &str) -> Result<()> {
     if exists(name).await? {
         return Ok(());
     }
     run_capture(&["network", "create", name]).await?;
     Ok(())
+}
+
+/// Whether a Docker network was created with `--internal`.
+async fn is_internal(name: &str) -> Result<bool> {
+    let out = run_capture(&["network", "inspect", name, "--format", "{{.Internal}}"]).await?;
+    Ok(out.trim() == "true")
 }
 
 pub async fn exists(name: &str) -> Result<bool> {
@@ -39,6 +57,34 @@ pub async fn exists(name: &str) -> Result<bool> {
 /// Connect a (possibly running) container to a network.
 pub async fn connect(network: &str, container: &str) -> Result<()> {
     run_capture(&["network", "connect", network, container]).await?;
+    Ok(())
+}
+
+/// Make a running container's internet egress match `want_egress`, reconciling
+/// any leftover runtime `sandbox net on/off` from a previous session.
+///
+/// This is what makes `sandbox run` authoritative: the runtime toggle survives
+/// a `sandbox down` (the bridge stays attached to the stopped container), so a
+/// later `docker start` would silently resume **with** egress. Calling this on
+/// every `run` re-enforces the profile — a default (safe) run revokes a stale
+/// `net on`; `attach` deliberately does NOT call it, so it preserves state.
+///
+/// Detaching is strand-safe: `sandbox-internal` is (re)attached first, so the
+/// container always keeps a network even if `bridge` was its only one (the
+/// `--network`-at-create case).
+pub async fn reconcile_egress(container: &str, want_egress: bool) -> Result<()> {
+    let nets = inspect_networks(container).await?;
+    let has_bridge = nets.iter().any(|n| n == BRIDGE);
+    if want_egress {
+        if !has_bridge {
+            connect(BRIDGE, container).await?;
+        }
+    } else if has_bridge {
+        if !nets.iter().any(|n| n == SANDBOX_INTERNAL) {
+            connect(SANDBOX_INTERNAL, container).await?;
+        }
+        disconnect(BRIDGE, container).await?;
+    }
     Ok(())
 }
 

@@ -30,8 +30,8 @@ pub use lifecycle::{
 };
 pub use network::{
     BRIDGE, SANDBOX_INTERNAL, compose_internal_name, connect, disconnect, ensure_bridge,
-    ensure_compose_internal, ensure_internal, inspect_networks, rewire_to_internal,
-    rm as network_rm,
+    ensure_compose_internal, ensure_internal, inspect_networks, reconcile_egress,
+    rewire_to_internal, rm as network_rm,
 };
 pub use plan::{Mount, NetworkSpec, Plan, ResourceSpec, SecuritySpec, UserSpec};
 pub use scanner::{
