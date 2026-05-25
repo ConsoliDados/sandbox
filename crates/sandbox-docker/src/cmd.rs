@@ -58,8 +58,9 @@ pub(crate) async fn run_probe(args: &[&str]) -> Result<Probe> {
     })
 }
 
-/// Inherit stdio (interactive) and wait. Used for `docker run -it` and
-/// `docker exec -it` where the user's terminal is attached to the container.
+/// Inherit stdio (interactive) and wait. Treats a non-zero exit as an error —
+/// for `docker build` / `docker run <oneshot>` where a non-zero status really
+/// is a failure of the operation we asked for.
 pub(crate) async fn run_attached(args: &[&str]) -> Result<()> {
     let status = Command::new("docker")
         .args(args)
@@ -74,6 +75,24 @@ pub(crate) async fn run_attached(args: &[&str]) -> Result<()> {
         code: status.code().unwrap_or(-1),
         stderr: "(stderr inherited)".to_string(),
     })
+}
+
+/// Inherit stdio and wait, returning the attached process's exit code. A
+/// non-zero code is **not** an error here: for an interactive shell it's the
+/// user's last command status (or 130 from Ctrl-C), and exiting the shell is
+/// the normal way out — surfacing it as "docker exec failed" is noise. Only a
+/// failure to spawn `docker` is an `Err`. Callers decide whether the code
+/// matters: `sandbox exec -- CMD` propagates it; the `run`/`attach` shell
+/// ignores it.
+pub(crate) async fn run_interactive(args: &[&str]) -> Result<i32> {
+    let status = Command::new("docker")
+        .args(args)
+        .status()
+        .await
+        .map_err(|source| Error::Io { source })?;
+    // `code()` is `None` when the child was killed by a signal; 130 (128+SIGINT)
+    // is the conventional stand-in and matches what an interactive Ctrl-C yields.
+    Ok(status.code().unwrap_or(130))
 }
 
 #[derive(Debug)]

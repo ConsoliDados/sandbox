@@ -6,7 +6,7 @@
 use sandbox_core::ContainerName;
 use serde::Deserialize;
 
-use crate::cmd::{run_attached, run_capture, run_probe};
+use crate::cmd::{run_capture, run_interactive, run_probe};
 use crate::plan::Plan;
 use crate::{Error, Result};
 
@@ -123,11 +123,14 @@ pub fn logs_args(name: &ContainerName, opts: &LogsOpts) -> Vec<String> {
 }
 
 /// Stream container logs to the user's terminal. With `follow=true` blocks
-/// until the user kills the stream or the container exits.
+/// until the user kills the stream (Ctrl-C) or the container exits. Ctrl-C
+/// makes `docker logs` exit non-zero; that's the normal way to stop following,
+/// not a failure, so we use [`run_interactive`] and ignore the code. A missing
+/// container is already rejected (exit 40) by the CLI before we get here.
 pub async fn logs(name: &ContainerName, opts: &LogsOpts) -> Result<()> {
     let args = logs_args(name, opts);
     let argv: Vec<&str> = args.iter().map(String::as_str).collect();
-    run_attached(&argv).await
+    run_interactive(&argv).await.map(|_| ())
 }
 
 /// Summary of a container as reported by `docker ps`. Field set is whatever
@@ -189,7 +192,12 @@ fn parse_ps_json(stdout: &str) -> Result<Vec<ContainerInfo>> {
     Ok(out)
 }
 
-pub async fn exec(name: &ContainerName, opts: &ExecOpts, cmd: &[String]) -> Result<()> {
+/// Run `cmd` inside `name`. Returns the command's exit code. For an
+/// interactive session (`-it`) a non-zero code is the user's shell/command
+/// status, not a tooling failure — see [`run_interactive`]. The captured
+/// (non-interactive) branch still errors on docker failure and returns `0` on
+/// success.
+pub async fn exec(name: &ContainerName, opts: &ExecOpts, cmd: &[String]) -> Result<i32> {
     let mut args: Vec<String> = vec!["exec".into()];
     if opts.interactive {
         args.push("--interactive".into());
@@ -210,9 +218,9 @@ pub async fn exec(name: &ContainerName, opts: &ExecOpts, cmd: &[String]) -> Resu
 
     let argv: Vec<&str> = args.iter().map(String::as_str).collect();
     if opts.interactive && opts.tty {
-        run_attached(&argv).await
+        run_interactive(&argv).await
     } else {
-        run_capture(&argv).await.map(|_| ())
+        run_capture(&argv).await.map(|_| 0)
     }
 }
 

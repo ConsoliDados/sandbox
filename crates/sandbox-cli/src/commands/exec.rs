@@ -58,7 +58,13 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
             name: project.container_name.as_str().to_string(),
         });
     }
-    sandbox_docker::exec(&project.container_name, &opts, &args.cmd).await?;
+    // Propagate the command's own exit code so `sandbox exec . -- test …`
+    // works in scripts. A non-zero code is the command's result, not a sandbox
+    // failure, so we exit with it directly instead of printing an error.
+    let code = sandbox_docker::exec(&project.container_name, &opts, &args.cmd).await?;
+    if code != 0 {
+        std::process::exit(code);
+    }
     Ok(())
 }
 
@@ -69,7 +75,10 @@ fn resolve_path(arg: Option<&str>) -> PathBuf {
     }
 }
 
-fn render_exec_args(
+/// Reconstruct the `docker exec …` argv for `--print-cmd`. Shared with
+/// `attach`, which renders the same invocation with the manifest shell as
+/// `cmd`. Must stay in sync with `sandbox_docker::exec`'s real arg order.
+pub(crate) fn render_exec_args(
     name: &sandbox_core::ContainerName,
     opts: &ExecOpts,
     cmd: &[String],
