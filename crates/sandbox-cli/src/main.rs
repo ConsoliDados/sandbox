@@ -85,6 +85,7 @@ enum Command {
         compose_file: Option<std::path::PathBuf>,
     },
     /// Stop a sandbox container; keep state
+    #[command(visible_alias = "stop")]
     Down {
         project: Option<String>,
         #[arg(long)]
@@ -144,6 +145,15 @@ enum Command {
         workdir: Option<String>,
         #[arg(last = true)]
         cmd: Vec<String>,
+    },
+    /// Re-enter the shell of a running sandbox (no scan; container must be up)
+    #[command(alias = "shell")]
+    Attach {
+        /// Project path (defaults to current directory)
+        project: Option<String>,
+        /// Force a language (default: auto-detect)
+        #[arg(long)]
+        lang: Option<String>,
     },
     /// Toggle internet egress at runtime (Phase 6)
     Net {
@@ -345,6 +355,14 @@ async fn dispatch(cli: Cli) -> Result<()> {
                 cmd,
                 user,
                 workdir,
+                print_cmd: cli.print_cmd,
+            })
+            .await
+        }
+        Some(Command::Attach { project, lang }) => {
+            commands::attach::execute(commands::attach::Args {
+                project,
+                lang,
                 print_cmd: cli.print_cmd,
             })
             .await
