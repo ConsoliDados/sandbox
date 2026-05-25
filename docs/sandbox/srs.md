@@ -26,8 +26,15 @@ Exit codes:
 | 20 | Docker not available / daemon not running |
 | 30 | Scan blocked the run (default mode) |
 | 31 | Compose validation failed (default mode) |
-| 40 | Container not found (for ops on existing project) |
-| 50 | Network operation failed |
+| 40 | Container not found / not running (for ops on existing project) |
+| 50 | Network operation failed (`net off` would strand the container) |
+
+> **Implemented subset.** This table is the planned contract. As currently
+> wired in `cli::Error::exit_code`, only `0`, `1`, `2`, `20`, `30`, `40`, `50`
+> are emitted — and `20` is **ClamAV DB not initialized**, not "Docker
+> unavailable". Conditions for `10` (project/lang) and `31` (compose validation)
+> currently collapse into `1` and `30` respectively. See
+> [`usage.md` § Exit codes](usage.md#exit-codes) for the as-built list.
 
 ## Subcommands
 
@@ -48,6 +55,14 @@ sandbox run [PATH]
     [--expose PORT ...]   Override port detection. Each PORT becomes a Traefik
                           entryPoint reachable as <project>.sandbox.localhost:PORT
                           (e.g. --expose 3000 5007). See ADR-0005.
+    [--with-deps]         Bring up the project's docker-compose deps alongside
+                          the sandbox container (ADR-0010). Deps inherit the
+                          sandbox's egress policy: in safe mode they move to
+                          a `--internal` `sandbox-compose-<hash>` network and
+                          cannot reach the internet; with `--network` they
+                          stay on the compose-default bridge.
+    [--compose-file PATH] Explicit compose file. Overrides discovery; required
+                          when discovery finds more than one candidate.
     [--shell zsh|bash]    Shell to launch (default: zsh, planned)
     [--rebuild]           Force rebuild of the container image (planned)
 ```
@@ -71,10 +86,10 @@ Behavior:
 
 ### `down`
 
-Stop running container; keep state and named volumes.
+Stop running container; keep state and named volumes. Alias: `sandbox stop`.
 
 ```
-sandbox down [PROJECT]
+sandbox down [PROJECT]        (alias: sandbox stop)
     [--all]               Stop every sandbox container
     [--with-deps]         Also stop project compose deps
 ```
@@ -142,6 +157,23 @@ sandbox exec PROJECT -- COMMAND [ARGS...]
 ```
 
 If container is not running, errors with code 40 (suggest `sandbox run` first).
+
+### `attach`
+
+Re-enter the shell of a running sandbox. Exiting the shell leaves the container
+running (PID 1 is a keepalive), so `attach` is the lightweight way back in —
+same shell, workdir, and host user as `sandbox run`, but **without** the
+pre-flight scan or any flight checks.
+
+```
+sandbox attach [PROJECT]      (alias: sandbox shell)
+    [--lang NAME]             Force a language (default: auto-detect)
+```
+
+The container must already be **running**: `attach` never starts a stopped
+container. Waking a stopped sandbox has to go through `sandbox run`, which
+re-scans — the host source may have changed since the container was built.
+Missing or stopped container errors with code 40 (suggest `sandbox run` first).
 
 ### `net`
 

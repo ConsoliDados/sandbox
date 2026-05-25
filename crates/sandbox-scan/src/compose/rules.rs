@@ -11,6 +11,15 @@ use std::path::{Path, PathBuf};
 use super::parse::{LongVolume, Service, VolumeRef};
 use crate::findings::{Finding, Severity};
 
+/// Registries we trust by default (ADR-0010 § Phase 6 registry allowlist).
+/// `docker.io/library/*` is the namespace reserved for official Docker
+/// images; `ghcr.io` is GitHub's per-user/org registry, where the namespace
+/// itself is account-controlled (i.e. typo-squatting requires controlling
+/// the github org). Other registries are out of the v0.1 default; users
+/// extend the list via config when wired (Phase 6 follow-up).
+const ALLOWED_DOCKER_IO_NAMESPACES: &[&str] = &["library"];
+const ALLOWED_REGISTRIES_ANY_NAMESPACE: &[&str] = &["ghcr.io"];
+
 /// Host paths whose mount into a container yields container-escape-grade
 /// access. `/var/lib/docker` is special — it lets a hostile container
 /// manipulate the daemon's own state. The list is conservative; missing a
@@ -30,6 +39,20 @@ const DANGEROUS_HOST_PATHS: &[&str] = &[
 
 pub(super) fn check_service(file: &Path, name: &str, service: &Service) -> Vec<Finding> {
     let mut out = Vec::new();
+    if let Some(image) = service.image.as_deref()
+        && let Some(reason) = is_registry_disallowed(image)
+    {
+        out.push(finding(
+            "compose/registry_not_allowed",
+            Severity::High,
+            file,
+            format!("service `{name}` uses image `{image}`: {reason}"),
+            "Only docker.io/library/* and ghcr.io/* are allowed by default. \
+             If this registry/namespace is intentional, extend the allowlist \
+             via `[scan.compose] allowed_registries = [...]` in config \
+             (planned), or override with `--unsafe` for this run.",
+        ));
+    }
     if service.privileged == Some(true) {
         out.push(finding(
             "compose/privileged",
@@ -132,6 +155,65 @@ pub(super) fn check_service(file: &Path, name: &str, service: &Service) -> Vec<F
         }
     }
     out
+}
+
+/// Returns a human-readable reason if the image's registry/namespace is
+/// outside the default allowlist; `None` if the image is allowed.
+///
+/// Docker image refs are flexible (`postgres`, `library/postgres`,
+/// `ghcr.io/owner/repo`, `gcr.io/proj/repo:tag@sha256:...`). We strip the
+/// tag/digest and infer the registry by looking at the first path segment:
+/// if it contains `.` or `:` (port) it's a hostname; otherwise the implicit
+/// registry is `docker.io`.
+fn is_registry_disallowed(image: &str) -> Option<String> {
+    let (registry, namespace) = parse_image_ref(image);
+    if registry == "docker.io" {
+        if ALLOWED_DOCKER_IO_NAMESPACES.contains(&namespace.as_str()) {
+            return None;
+        }
+        return Some(format!(
+            "docker.io namespace `{namespace}` is not in the default allowlist \
+             (only `library/*` for official images)"
+        ));
+    }
+    if ALLOWED_REGISTRIES_ANY_NAMESPACE.contains(&registry.as_str()) {
+        return None;
+    }
+    Some(format!(
+        "registry `{registry}` is not in the default allowlist"
+    ))
+}
+
+/// Returns `(registry, namespace)` for a docker image reference. Tag and
+/// digest are discarded — they don't affect registry policy.
+///
+/// Compose accepts these shapes for `image:`:
+/// - `postgres` / `postgres:15` → docker.io/library/postgres
+/// - `library/postgres` → docker.io/library/postgres
+/// - `owner/repo[:tag]` → docker.io/owner/repo
+/// - `host[:port]/path/repo[:tag][@digest]` → host as registry
+fn parse_image_ref(image: &str) -> (String, String) {
+    let without_digest = image.split_once('@').map_or(image, |(head, _)| head);
+    let parts: Vec<&str> = without_digest.split('/').collect();
+    match parts.as_slice() {
+        [] | [""] => ("docker.io".into(), "library".into()),
+        [_single] => ("docker.io".into(), "library".into()),
+        [namespace, _repo] => ("docker.io".into(), (*namespace).to_string()),
+        [first, rest @ ..] => {
+            // The first segment is a registry only if it looks like a
+            // hostname: contains `.` or a port (`:`). Otherwise compose
+            // treats the whole path as a docker.io namespace+repo.
+            if first.contains('.') || first.contains(':') {
+                let namespace = rest
+                    .split_last()
+                    .map(|(_, ns)| ns.join("/"))
+                    .unwrap_or_default();
+                ((*first).to_string(), namespace)
+            } else {
+                ("docker.io".into(), (*first).to_string())
+            }
+        }
+    }
 }
 
 fn finding(
@@ -352,6 +434,73 @@ services:
         assert_eq!(
             summary,
             vec![("compose/security_opt_unconfined", Severity::Critical)]
+        );
+    }
+
+    // --- registry allowlist (Phase 6, ADR-0010) -----------------------------
+
+    #[test]
+    fn allowlist_passes_official_library_images() {
+        // Single-segment and explicit library/ — both resolve to
+        // docker.io/library and must pass.
+        for img in ["postgres", "postgres:15", "library/postgres", "node:24"] {
+            let body = format!("services:\n  s:\n    image: {img}\n");
+            let f = fixture(&body);
+            assert!(
+                !rule_ids(&f).contains(&"compose/registry_not_allowed"),
+                "{img} should be allowed but fired the rule: {f:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn allowlist_passes_ghcr_images_in_any_namespace() {
+        for img in ["ghcr.io/owner/repo", "ghcr.io/owner/repo:tag"] {
+            let body = format!("services:\n  s:\n    image: {img}\n");
+            let f = fixture(&body);
+            assert!(
+                !rule_ids(&f).contains(&"compose/registry_not_allowed"),
+                "{img} should be allowed but fired the rule: {f:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn allowlist_flags_unknown_docker_io_namespace() {
+        // docker.io is allowed but only the `library` namespace; an arbitrary
+        // owner namespace is the typo-squat / impersonation surface.
+        let f = fixture("services:\n  s:\n    image: attacker/postgres:15\n");
+        let summary: Vec<_> = f
+            .iter()
+            .filter(|x| x.rule_id == "compose/registry_not_allowed")
+            .map(|x| (x.severity, x.message.clone()))
+            .collect();
+        let first = summary.first().cloned();
+        assert_eq!(summary.len(), 1, "expected exactly one finding: {f:?}");
+        let (sev, msg) = first.unwrap_or((Severity::Info, String::new()));
+        assert_eq!(sev, Severity::High);
+        assert!(msg.contains("attacker"));
+    }
+
+    #[test]
+    fn allowlist_flags_third_party_registry() {
+        let f = fixture("services:\n  s:\n    image: gcr.io/some-project/image:tag\n");
+        assert!(
+            rule_ids(&f).contains(&"compose/registry_not_allowed"),
+            "gcr.io should fire the rule: {f:?}"
+        );
+    }
+
+    #[test]
+    fn allowlist_ignores_tag_and_digest_when_classifying() {
+        // The digest must not be treated as part of the path; we should still
+        // classify the registry correctly and allow this image.
+        let f = fixture(
+            "services:\n  s:\n    image: library/postgres:15@sha256:0000000000000000000000000000000000000000000000000000000000000000\n",
+        );
+        assert!(
+            !rule_ids(&f).contains(&"compose/registry_not_allowed"),
+            "digest should not affect registry classification: {f:?}"
         );
     }
 }

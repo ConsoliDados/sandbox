@@ -37,13 +37,14 @@ In order:
 
 1. [`docs/sandbox/threat-model.md`](docs/sandbox/threat-model.md) — what's in/out of scope, defines security posture
 2. [`docs/sandbox/srs.md`](docs/sandbox/srs.md) — CLI surface (subcommands, flags, exit codes)
-3. [`docs/sandbox/sad.md`](docs/sandbox/sad.md) — crate boundaries, dataflow, key abstractions
-4. [`docs/sandbox/playbook.md`](docs/sandbox/playbook.md) — coding conventions
-5. [`docs/sandbox/roadmap.md`](docs/sandbox/roadmap.md) — current phase + what's next
-6. [`docs/sandbox/smoke-tests.md`](docs/sandbox/smoke-tests.md) — copy-paste recipes to verify every shipped feature; the canonical answer to "does X work?"
-7. The crate-level `AGENTS.md` of whatever you're working on
-8. [`docs/sandbox/adrs/`](docs/sandbox/adrs/) when touching cross-cutting decisions
-9. [`docs/sandbox/open-questions.md`](docs/sandbox/open-questions.md) — unresolved stuff
+3. [`docs/sandbox/usage.md`](docs/sandbox/usage.md) — how each command is used + the network model (`--network` vs `net`)
+4. [`docs/sandbox/sad.md`](docs/sandbox/sad.md) — crate boundaries, dataflow, key abstractions
+5. [`docs/sandbox/playbook.md`](docs/sandbox/playbook.md) — coding conventions
+6. [`docs/sandbox/roadmap.md`](docs/sandbox/roadmap.md) — current phase + what's next
+7. [`docs/sandbox/smoke-tests.md`](docs/sandbox/smoke-tests.md) — copy-paste recipes to verify every shipped feature; the canonical answer to "does X work?"
+8. The crate-level `AGENTS.md` of whatever you're working on
+9. [`docs/sandbox/adrs/`](docs/sandbox/adrs/) when touching cross-cutting decisions
+10. [`docs/sandbox/open-questions.md`](docs/sandbox/open-questions.md) — unresolved stuff
 
 ## Conventions (high level)
 

@@ -70,12 +70,29 @@ enum Command {
         /// language manifest's `port_detection` rules run.
         #[arg(long, value_name = "PORT")]
         expose: Vec<u16>,
+
+        /// Bring up the project's `docker-compose` deps alongside the
+        /// sandbox container (ADR-0010). Deps inherit the sandbox's egress
+        /// policy: in safe mode they're moved to a `--internal` network and
+        /// cannot reach the internet; with `--network` they keep the
+        /// compose-default bridge.
+        #[arg(long = "with-deps")]
+        with_deps: bool,
+
+        /// Explicit path to a compose file. Overrides discovery; required
+        /// when discovery finds more than one candidate.
+        #[arg(long = "compose-file", value_name = "PATH")]
+        compose_file: Option<std::path::PathBuf>,
     },
     /// Stop a sandbox container; keep state
+    #[command(visible_alias = "stop")]
     Down {
         project: Option<String>,
         #[arg(long)]
         all: bool,
+        /// Also stop and remove the compose deps brought up by `--with-deps`.
+        #[arg(long = "with-deps")]
+        with_deps: bool,
     },
     /// Remove container, named volumes, and per-project state
     Nuke {
@@ -129,6 +146,15 @@ enum Command {
         #[arg(last = true)]
         cmd: Vec<String>,
     },
+    /// Re-enter the shell of a running sandbox (no scan; container must be up)
+    #[command(alias = "shell")]
+    Attach {
+        /// Project path (defaults to current directory)
+        project: Option<String>,
+        /// Force a language (default: auto-detect)
+        #[arg(long)]
+        lang: Option<String>,
+    },
     /// Toggle internet egress at runtime (Phase 6)
     Net {
         #[command(subcommand)]
@@ -168,9 +194,33 @@ enum Command {
 
 #[derive(Subcommand, Debug)]
 enum NetOp {
-    On { project: String },
-    Off { project: String },
-    Status { project: String },
+    /// Attach the default Docker bridge — grants internet egress
+    On {
+        #[arg(default_value = ".")]
+        project: String,
+    },
+    /// Detach the bridge — restores the egress-restricted default
+    Off {
+        #[arg(default_value = ".")]
+        project: String,
+    },
+    /// Report which networks the container is attached to + egress state
+    Status {
+        #[arg(default_value = ".")]
+        project: String,
+        #[arg(long, value_enum, default_value_t = commands::net::Format::Table)]
+        format: commands::net::Format,
+    },
+}
+
+impl From<NetOp> for commands::net::Args {
+    fn from(op: NetOp) -> Self {
+        match op {
+            NetOp::On { project } => Self::On { project },
+            NetOp::Off { project } => Self::Off { project },
+            NetOp::Status { project, format } => Self::Status { project, format },
+        }
+    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -225,6 +275,8 @@ async fn dispatch(cli: Cli) -> Result<()> {
             no_scan,
             with_clamav,
             expose,
+            with_deps,
+            compose_file,
         }) => {
             commands::run::execute(commands::run::Args {
                 path,
@@ -235,12 +287,23 @@ async fn dispatch(cli: Cli) -> Result<()> {
                 no_scan,
                 with_clamav,
                 expose,
+                with_deps,
+                compose_file,
                 print_cmd: cli.print_cmd,
             })
             .await
         }
-        Some(Command::Down { project, all }) => {
-            commands::down::execute(commands::down::Args { project, all }).await
+        Some(Command::Down {
+            project,
+            all,
+            with_deps,
+        }) => {
+            commands::down::execute(commands::down::Args {
+                project,
+                all,
+                with_deps,
+            })
+            .await
         }
         Some(Command::Nuke {
             project,
@@ -296,6 +359,15 @@ async fn dispatch(cli: Cli) -> Result<()> {
             })
             .await
         }
+        Some(Command::Attach { project, lang }) => {
+            commands::attach::execute(commands::attach::Args {
+                project,
+                lang,
+                print_cmd: cli.print_cmd,
+            })
+            .await
+        }
+        Some(Command::Net { op }) => commands::net::execute(op.into()).await,
         Some(Command::Proxy { op }) => commands::proxy::execute(op.into()).await,
         Some(Command::Scan {
             path,

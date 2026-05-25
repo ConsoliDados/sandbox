@@ -32,6 +32,10 @@ sandbox run . --network             ← let the project reach the internet
     │   • use this when the project legitimately needs to fetch things
     │     (npm install with private registry, API calls during dev) and
     │     you've reviewed the code enough to permit the C2 risk
+    │   • runtime equivalent: keep the default `sandbox run .` (isolated),
+    │     then `sandbox net on .` only for the moment you need egress and
+    │     `sandbox net off .` right after. Same control, tighter window.
+    │     See usage.md § The network model.
     │
     ▼
 sandbox run . --unsafe              ← treat as a normal dev container
@@ -87,8 +91,17 @@ Even `--unsafe` keeps:
 
 These are not part of the trust dial. To turn them off you'd need to edit a profile in `~/.config/sandbox/config.toml` and you'd be choosing to do it with full knowledge.
 
+## Re-entering a sandbox
+
+Exiting the shell does **not** stop the container — PID 1 is a keepalive, so it
+keeps running until `sandbox down`. To hop back into a running sandbox without
+re-scanning, use `sandbox attach .` (or `sandbox shell .`). `sandbox run .` also
+re-enters, but a `run` against a stopped container re-scans first — by design,
+since the host source may have changed. See `usage.md` § Container lifecycle.
+
 ## See also
 
+- `usage.md` — command-by-command reference + the network model
 - `threat-model.md` — what each notch defends against
 - `srs.md` — the flags and subcommands
 - ADR-0003 — volume strategy per profile

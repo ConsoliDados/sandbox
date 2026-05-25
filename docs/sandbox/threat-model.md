@@ -6,13 +6,13 @@
 |---|---|---|
 | T1 | Malware in untrusted source code (e.g. Contagious Interview / DPRK / supply chain) executing arbitrary code on the host | Run code only inside a Docker container with non-root user, dropped capabilities, no `new privileges`, ephemeral `$HOME` |
 | T2 | Persistent malware writing to the project source tree via volume mount | Project mounted **read-only** in default mode; package directories (`node_modules`, `target`, `.venv`, `dist`) are **named volumes** separate from the source |
-| T3 | C2 callback / data exfiltration to the internet | Container joins `sandbox-internal` network with no internet egress by default. Egress is runtime opt-in via `sandbox net on` or boot opt-in via `--network` |
+| T3 | C2 callback / data exfiltration to the internet | Container joins `sandbox-internal` network with no internet egress by default. **Every** network the sandbox joins is `--internal`, including the reverse-proxy network (`sandbox-proxy`) — so exposing a port does not grant egress (ADR-0004 addendum). Egress is runtime opt-in via `sandbox net on` or boot opt-in via `--network` |
 | T4 | Theft of host credentials (`~/.ssh`, `~/.aws`, `~/.config/gh`, `~/.npmrc`, `~/.gnupg`, etc.) | These paths are **never** mounted. Container `$HOME` is a `tmpfs`. Only the project directory and explicitly-opted dotfiles (zshrc, starship) are mounted, read-only |
 | T5 | Malicious `tasks.json` / `devcontainer.json` / `.idea` autorun when opening project in editor on host | The user is expected to open the project **only inside the container** (e.g. `sandbox exec PROJECT -- $EDITOR`). The CLI warns when these vector files exist in default mode and refuses without `--unsafe` if scan finds known-bad patterns |
 | T6 | Malicious `docker-compose.yml` declaring `privileged`, `network_mode: host`, host bind mounts outside project, `cap_add=SYS_ADMIN`, etc. | Compose file is parsed and validated against an allowlist before any service is started. Violations block in default mode; `--unsafe` permits |
 | T7 | Resource exhaustion (cryptominer in the project) | CPU and memory limits applied per container (configurable via profile) |
 | T8 | Re-running a previously-cleaned project that was modified to be malicious | Hash of source tree (via `git ls-files`) is recorded. On run, hash is compared; mismatch triggers re-scan even if cached |
-| T9 | Generic malware (Windows binary, packed payload) committed to a Linux/Node project | ClamAV motor in the scan pipeline runs against project source via an ephemeral scan container. Mandatory in `paranoid`, opt-in in `safe`. See ADR-0008 |
+| T9 | Generic malware (Windows binary, packed payload) committed to a Linux/Node project | ClamAV motor in the scan pipeline runs against project source via an ephemeral scan container. Currently **opt-in** via `--with-clamav` on `scan`/`run`; the profile-driven "mandatory in `paranoid`" default is deferred to Phase 7. See ADR-0008 |
 
 ## Out of scope (not defended against)
 

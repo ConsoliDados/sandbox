@@ -3,7 +3,7 @@
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
 
-use sandbox_core::{LanguageRegistry, Paths, Project};
+use sandbox_core::{LanguageRegistry, Meta, Paths, Project};
 
 use crate::{Error, Result};
 
@@ -30,6 +30,13 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
         return Ok(());
     }
 
+    // Tear down compose deps BEFORE we drop the state dir — the
+    // `Meta.compose` block is our only record of what `sandbox` started.
+    // Reading it must happen while it's still on disk.
+    let paths = Paths::discover()?;
+    let state_dir = paths.container_state_dir(project.hash.short().as_str());
+    tear_down_compose_if_recorded(&project, &state_dir).await?;
+
     sandbox_docker::rm(&project.container_name, true).await?;
     println!("removed container {}", project.container_name);
 
@@ -40,13 +47,36 @@ pub(crate) async fn execute(args: Args) -> Result<()> {
         println!("removed named volumes for {}", project.container_name);
     }
 
-    if !args.keep_state {
-        let paths = Paths::discover()?;
-        let state_dir = paths.container_state_dir(&project.hash.short());
-        if state_dir.exists() {
-            std::fs::remove_dir_all(&state_dir)?;
-            println!("removed state dir {}", state_dir.display());
-        }
+    if !args.keep_state && state_dir.exists() {
+        std::fs::remove_dir_all(&state_dir)?;
+        println!("removed state dir {}", state_dir.display());
+    }
+    Ok(())
+}
+
+/// `nuke` is "remove everything for this project" — compose deps brought up
+/// by `sandbox run --with-deps` are part of "everything". No opt-in flag:
+/// matches the rest of the nuke semantics (volumes + state are also taken
+/// down by default; `--keep-*` flags carve exceptions). The check is
+/// gracefully no-op when there's no `[compose]` block recorded.
+async fn tear_down_compose_if_recorded(
+    project: &Project,
+    state_dir: &std::path::Path,
+) -> Result<()> {
+    if !Meta::exists_at(state_dir) {
+        return Ok(());
+    }
+    let meta = Meta::load(state_dir)?;
+    let Some(compose) = meta.compose else {
+        return Ok(());
+    };
+    sandbox_docker::compose_down(&compose.project_name).await?;
+    println!("compose deps stopped: project={}", compose.project_name);
+    let expected_internal = sandbox_docker::compose_internal_name(project.hash.short().as_str());
+    if compose.network == expected_internal
+        && let Err(e) = sandbox_docker::network_rm(&compose.network).await
+    {
+        tracing::warn!(network = %compose.network, error = %e, "could not remove compose-internal network");
     }
     Ok(())
 }

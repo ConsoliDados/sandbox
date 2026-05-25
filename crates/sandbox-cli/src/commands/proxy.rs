@@ -80,7 +80,10 @@ async fn start(paths: &Paths, proxy_dir: &std::path::Path, dashboard: bool) -> R
         );
     }
 
-    sandbox_docker::ensure_bridge(sandbox_proxy::PROXY_NETWORK).await?;
+    // `--internal`: sandboxes attach here, so it must not grant egress
+    // (ADR-0004). Traefik publishes host ports via Docker's default `bridge`
+    // and routes inward over this network.
+    sandbox_docker::ensure_internal(sandbox_proxy::PROXY_NETWORK).await?;
     let cfg = ProxyConfig {
         ports,
         dashboard,

@@ -34,6 +34,33 @@ pub enum Error {
 
     #[error("dotfile not found at {0}")]
     DotfileMissing(PathBuf),
+
+    #[error(
+        "multiple compose files found — pass `--compose-file PATH` to pick one:\n{}",
+        format_candidates(.candidates)
+    )]
+    ComposeMultipleMatches { candidates: Vec<PathBuf> },
+
+    #[error("compose file does not exist: {path}")]
+    ComposeOverrideMissing { path: PathBuf },
+
+    #[error("compose path is not a regular file: {path}")]
+    ComposeOverrideNotFile { path: PathBuf },
+
+    #[error("compose io: {path}: {source}")]
+    ComposeIo {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+}
+
+fn format_candidates(paths: &[PathBuf]) -> String {
+    paths
+        .iter()
+        .map(|p| format!("  - {}", p.display()))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

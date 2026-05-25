@@ -51,6 +51,52 @@ Negative:
 - **Sibling sandboxed projects share `sandbox-internal`** and can in principle reach each other on the internal network. We accept this for v0.1; Phase 6 may revisit per-project networks if compose deps make this an actual attack surface.
 - **Network is host-global.** A user who renames or removes `sandbox-internal` outside our control will see runs fail until `ensure_internal` recreates it. Acceptable: the network name is documented, the recovery is automatic, and we don't expect users to manage Docker networks by hand.
 
+## Addendum (2026-05-24) — the proxy network must also be `--internal`
+
+**Invariant (made explicit):** *every* network a sandbox container is attached
+to in default mode must be `--internal`. Egress is granted only by attaching the
+egress-capable `bridge` (boot via `--network`/`--unsafe`, runtime via
+`sandbox net on`). The original decision above reasoned only about the primary
+`sandbox-internal`; it did not constrain the *secondary* networks added later.
+
+**The leak.** ADR-0005 added a `sandbox-proxy` network so Traefik can route to
+project containers. It was created as a regular (egress-allowed) bridge, and the
+sandbox joins it at create time whenever the project exposes a port. Node's
+manifest carries a `default_port`, so **every node project silently got internet
+egress in safe mode** — `npm start` reached the internet with `sandbox net
+status` still reporting `egress: off` (the toggle only inspects the literal
+`bridge`). This defeats T1/T3 for the common case.
+
+**Decision.** `sandbox-proxy` is now created `--internal` (`ensure_internal`,
+which also recreates a stale non-internal one). To keep inbound routing working,
+**Traefik is dual-homed**:
+
+- compose's auto-created `default` bridge — carries Traefik's published host
+  ports (`-p`) and its own egress;
+- `sandbox-proxy` (`--internal`) — container-to-container path to the sandboxes,
+  no egress for them.
+
+This is necessary because **published ports do not work on an `--internal`
+network** (verified empirically: a server reachable inside the container is
+unreachable from the host via `-p` when its only network is internal). The proxy
+is a trusted, first-party component, so granting *Traefik* egress is acceptable;
+the untrusted sandboxes stay egress-denied.
+
+A dedicated `sandbox-proxy-edge` bridge (instead of the shared compose `default`)
+is the cleaner long-term shape and is deferred to post-MVP.
+
+**Second leak — the toggle survived a resume.** `sandbox net on` attaches
+`bridge` to the running container; `sandbox down` only *stops* it, leaving the
+bridge attached. A later `sandbox run` resumes via `docker start`, which
+preserves network attachments — so a **default** run silently came back **with**
+egress. Decision: `sandbox run` now calls `network::reconcile_egress` after
+ensuring the container is up — attach `bridge` iff the profile grants egress,
+detach it otherwise. `run` is therefore *authoritative* on egress (a default run
+revokes a stale `net on`); `sandbox attach` deliberately skips reconciliation so
+it preserves state. Detaching is strand-safe: `sandbox-internal` is reattached
+first. Net effect: the runtime toggle survives `down` but never a subsequent
+`run`.
+
 ## References
 
 - `../threat-model.md` T1 (egress C2), T3 (data exfiltration), T5 (credential theft)
