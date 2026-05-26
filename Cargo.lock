@@ -1887,7 +1887,7 @@ version = "0.0.1"
 dependencies = [
  "clap",
  "directories",
- "sandbox-core",
+ "sandbox-cli-core",
  "sandbox-docker",
  "sandbox-proxy",
  "sandbox-scan",
@@ -1901,7 +1901,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sandbox-core"
+name = "sandbox-cli-core"
 version = "0.0.1"
 dependencies = [
  "directories",
@@ -1920,7 +1920,7 @@ name = "sandbox-docker"
 version = "0.0.1"
 dependencies = [
  "regex",
- "sandbox-core",
+ "sandbox-cli-core",
  "serde",
  "serde_json",
  "tempfile",
@@ -1936,7 +1936,7 @@ name = "sandbox-proxy"
 version = "0.0.1"
 dependencies = [
  "regex",
- "sandbox-core",
+ "sandbox-cli-core",
  "serde",
  "tempfile",
  "thiserror 2.0.18",
@@ -1952,7 +1952,7 @@ version = "0.0.1"
 dependencies = [
  "hex",
  "regex",
- "sandbox-core",
+ "sandbox-cli-core",
  "serde",
  "serde_yml",
  "sha2",

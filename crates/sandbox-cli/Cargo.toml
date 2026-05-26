@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+description = "Secure-by-default isolated Docker dev environments for running untrusted code (installs the `sandbox` binary)."
 
 [[bin]]
 name = "sandbox"

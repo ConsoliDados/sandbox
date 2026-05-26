@@ -7,7 +7,7 @@ version = "0.0.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Johnny Carreiro"]
-repository = "https://github.com/johnnycarreiro/sandbox"
+repository = "https://github.com/JohnnyCarreiro/sandbox"
 rust-version = "1.85"
 
 [workspace.lints.rust]
@@ -27,10 +27,14 @@ print_stdout = "allow"
 print_stderr = "allow"
 
 [workspace.dependencies]
-sandbox-core = { path = "crates/sandbox-core" }
-sandbox-docker = { path = "crates/sandbox-docker" }
-sandbox-scan = { path = "crates/sandbox-scan" }
-sandbox-proxy = { path = "crates/sandbox-proxy" }
+# `sandbox-core` is taken on crates.io, so the core crate publishes as
+# `sandbox-cli-core`. The dependency KEY stays `sandbox-core` (and the lib name
+# stays `sandbox_core`), so `use sandbox_core::...` is unchanged everywhere.
+# `version` is required for a path dep to be publishable. See release-runbook.md.
+sandbox-core = { path = "crates/sandbox-core", version = "0.0.1", package = "sandbox-cli-core" }
+sandbox-docker = { path = "crates/sandbox-docker", version = "0.0.1" }
+sandbox-scan = { path = "crates/sandbox-scan", version = "0.0.1" }
+sandbox-proxy = { path = "crates/sandbox-proxy", version = "0.0.1" }
 
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
