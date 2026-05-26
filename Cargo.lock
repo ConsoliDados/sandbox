@@ -1883,7 +1883,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-cli"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "clap",
  "directories",
@@ -1902,7 +1902,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-cli-core"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "directories",
  "hex",
@@ -1917,7 +1917,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-docker"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "regex",
  "sandbox-cli-core",
@@ -1933,7 +1933,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-proxy"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "regex",
  "sandbox-cli-core",
@@ -1948,7 +1948,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-scan"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "hex",
  "regex",

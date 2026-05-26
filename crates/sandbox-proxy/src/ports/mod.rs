@@ -63,13 +63,15 @@ fn dedup_sorted(input: &[u16]) -> Vec<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sandbox_core::LangManifest;
+    use sandbox_core::{LangManifest, LanguageRegistry};
 
     type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
 
-    fn parse_node_manifest() -> std::result::Result<LangManifest, toml::de::Error> {
-        let raw = include_str!("../../../../languages/node.toml");
-        toml::from_str(raw)
+    // Pull the real builtin node manifest through the registry instead of
+    // include_str!'ing a file outside this crate (which breaks `cargo publish`
+    // and the packaged crate). The builtins now live in `sandbox-core`.
+    fn parse_node_manifest() -> std::result::Result<LangManifest, sandbox_core::Error> {
+        Ok(LanguageRegistry::builtin()?.require("node")?.clone())
     }
 
     #[test]
