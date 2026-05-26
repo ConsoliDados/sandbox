@@ -4,9 +4,12 @@ use serde::Deserialize;
 
 use crate::{Error, Result};
 
-const BUILTIN_NODE: &str = include_str!("../../../languages/node.toml");
-const BUILTIN_BUN: &str = include_str!("../../../languages/bun.toml");
-const BUILTIN_RUST: &str = include_str!("../../../languages/rust.toml");
+// Builtin manifests live inside this crate (`crates/sandbox-core/languages/`)
+// so `cargo publish` packages them. User-defined stacks load at runtime from
+// `~/.config/sandbox/languages/`. See `../languages/README.md`.
+const BUILTIN_NODE: &str = include_str!("../languages/node.toml");
+const BUILTIN_BUN: &str = include_str!("../languages/bun.toml");
+const BUILTIN_RUST: &str = include_str!("../languages/rust.toml");
 
 /// Identifier for a language manifest. Equal to the manifest's `name` field.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -28,7 +31,7 @@ impl std::fmt::Display for LanguageId {
     }
 }
 
-/// Language manifest schema. See `languages/README.md`.
+/// Language manifest schema. See `../languages/README.md` (in this crate).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LangManifest {

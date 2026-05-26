@@ -1883,11 +1883,11 @@ dependencies = [
 
 [[package]]
 name = "sandbox-cli"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "clap",
  "directories",
- "sandbox-core",
+ "sandbox-cli-core",
  "sandbox-docker",
  "sandbox-proxy",
  "sandbox-scan",
@@ -1901,8 +1901,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "sandbox-core"
-version = "0.0.1"
+name = "sandbox-cli-core"
+version = "0.1.0"
 dependencies = [
  "directories",
  "hex",
@@ -1917,10 +1917,10 @@ dependencies = [
 
 [[package]]
 name = "sandbox-docker"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "regex",
- "sandbox-core",
+ "sandbox-cli-core",
  "serde",
  "serde_json",
  "tempfile",
@@ -1933,10 +1933,10 @@ dependencies = [
 
 [[package]]
 name = "sandbox-proxy"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "regex",
- "sandbox-core",
+ "sandbox-cli-core",
  "serde",
  "tempfile",
  "thiserror 2.0.18",
@@ -1948,11 +1948,11 @@ dependencies = [
 
 [[package]]
 name = "sandbox-scan"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "hex",
  "regex",
- "sandbox-core",
+ "sandbox-cli-core",
  "serde",
  "serde_yml",
  "sha2",

@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+description = "Security scan pipeline (YARA + heuristics + compose + ClamAV) for the sandbox CLI."
 
 [dependencies]
 sandbox-core.workspace = true

@@ -21,11 +21,11 @@ sandbox/
 ├── crates/
 │   ├── sandbox-cli       bin: argparse, command dispatch, top-level orchestration
 │   ├── sandbox-core      domain: project, profile, hash, language manifest, lifecycle state
+│   │   └── languages/    bundled builtin manifests (node, bun, rust) — `include_str!`'d, so they must live in-crate
 │   ├── sandbox-docker    adapter: docker CLI shell-out, compose lifecycle, network ops
 │   ├── sandbox-scan      adapter: YARA + heuristic regex + scan cache
 │   └── sandbox-proxy     adapter: Traefik label generation + sidecar lifecycle
 ├── docs/sandbox/                 architecture (sad), requirements (srs), playbook, ADRs, threat model, roadmap
-├── languages/            language manifests (TOML)
 └── scripts/dev/          lint.sh, test.sh, fmt.sh
 ```
 
@@ -76,7 +76,8 @@ Each crate owns its own conventions for its domain. When working inside `crates/
 
 | Task | What to touch |
 |---|---|
-| Add a language stack | Drop `languages/<name>.toml`. No code change. |
+| Add a language stack (user) | Drop `<name>.toml` in `~/.config/sandbox/languages/`. Loaded at runtime. No code change. |
+| Add a **builtin** language | Add `<name>.toml` under `crates/sandbox-core/languages/` + a `BUILTIN_*` `include_str!` const in `sandbox-core/src/lang.rs` (builtins are compiled in, so they must live in-crate to be published). |
 | Add a scan rule | `crates/sandbox-scan/src/yara/rules/` (YARA) or `crates/sandbox-scan/src/heuristics/` (regex) or `crates/sandbox-scan/src/compose/rules.rs` (compose). Add fixtures + recipe in `docs/sandbox/smoke-tests.md`. Bump `RULESET_VERSION` in `cache.rs` so cached scans re-evaluate. |
 | Add a subcommand | `crates/sandbox-cli/src/commands/<name>.rs` + register in `commands/mod.rs` + update `docs/sandbox/srs.md` + add a recipe in `docs/sandbox/smoke-tests.md`. |
 | Change Docker behavior | `crates/sandbox-docker/`. Document deviation from previous via ADR if user-visible. |
