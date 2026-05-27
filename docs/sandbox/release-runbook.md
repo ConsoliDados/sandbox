@@ -60,7 +60,7 @@ cargo new --lib /tmp/reserve && cd /tmp/reserve
 #   edition = "2021"
 #   description = "Placeholder — reserved for the sandbox project"
 #   license = "MIT OR Apache-2.0"
-#   repository = "https://github.com/johnnycarreiro/sandbox"
+#   repository = "https://github.com/ConsoliDados/sandbox"
 cargo publish --allow-dirty
 ```
 
@@ -80,7 +80,7 @@ from the workspace):
 
 ```toml
 description = "<one line>"
-repository  = "https://github.com/johnnycarreiro/sandbox"
+repository  = "https://github.com/ConsoliDados/sandbox"
 readme      = "README.md"          # or a crate-local README
 keywords    = ["docker", "sandbox", "security", "isolation"]   # max 5
 categories  = ["command-line-utilities", "development-tools"]
@@ -127,7 +127,7 @@ Three install paths to support:
    this script; evaluate it before hand-rolling.
 
 **`cargo install --git` fallback:** even without crates.io, users can run
-`cargo install --git https://github.com/johnnycarreiro/sandbox sandbox-cli` — it builds from the
+`cargo install --git https://github.com/ConsoliDados/sandbox sandbox-cli` — it builds from the
 repo with path deps intact and needs no published crates. Useful for early adopters before
 Step 3.
 
