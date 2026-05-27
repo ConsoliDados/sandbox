@@ -9,3 +9,17 @@
 .idea/
 .vscode/
 .claude/
+
+# Obsidian — vault config + plugins + theme are tracked so the vault works
+# on first open. Only personal/transient state is excluded.
+docs/sandbox/.obsidian/workspace.json
+docs/sandbox/.obsidian/workspace-mobile.json
+docs/sandbox/.obsidian/workspaces.json
+docs/sandbox/.obsidian/cache
+
+# Per-plugin transient state (data.json holds settings — keep; cache files — drop).
+docs/sandbox/.obsidian/plugins/*/main.js.map
+docs/sandbox/.obsidian/plugins/omnisearch/databases/
+
+# Plugin update lock files Obsidian rewrites on every update.
+docs/sandbox/.obsidian/plugins/*/.hotreload

@@ -1,10 +1,17 @@
 [package]
-name = "sandbox-core"
+name = "sandbox-cli-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
+repository.workspace = true
+description = "Core domain types (project, profile, hash, language manifest, lifecycle state) for the sandbox CLI."
+
+[lib]
+# crates.io package is `sandbox-cli-core` (`sandbox-core` was taken), but the
+# lib name stays `sandbox_core` so `use sandbox_core::...` is unchanged repo-wide.
+name = "sandbox_core"
 
 [dependencies]
 thiserror.workspace = true
@@ -15,6 +22,9 @@ sha2.workspace = true
 hex.workspace = true
 walkdir.workspace = true
 directories.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
 
 [lints]
 workspace = true

@@ -1,0 +1,21 @@
+name = "node"
+display_name = "Node.js"
+image = "node:24.10.0"
+detect = ["package.json"]
+priority = 0
+package_dirs = ["node_modules", ".pnpm-store", ".yarn"]
+lock_files = ["package-lock.json", "pnpm-lock.yaml", "yarn.lock"]
+primary_lock_file = "package-lock.json"
+default_port = 3000
+extra_packages = ["zsh", "git", "starship"]
+shell = "/bin/bash"
+workdir = "/app"
+
+[port_detection]
+patterns = [
+    'app\.listen\((\d+)',
+    '\.listen\(\s*(\d+)',
+    'server\.listen\((\d+)',
+    'createServer\(\).*?\.listen\((\d+)',
+]
+env_keys = ["PORT", "APP_PORT", "HTTP_PORT", "SERVER_PORT", "API_PORT", "FRONTEND_PORT"]

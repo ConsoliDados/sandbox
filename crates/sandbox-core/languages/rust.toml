@@ -1,0 +1,22 @@
+name = "rust"
+display_name = "Rust"
+image = "rust:1.93.1"
+detect = ["Cargo.toml"]
+priority = 20
+package_dirs = ["target", ".cargo"]
+lock_files = ["Cargo.lock"]
+primary_lock_file = "Cargo.lock"
+default_port = 8080
+extra_packages = ["zsh", "git", "starship"]
+shell = "/bin/bash"
+workdir = "/app"
+
+[port_detection]
+patterns = [
+    'bind\(\s*"0\.0\.0\.0:(\d+)"',
+    'bind\(\s*"127\.0\.0\.1:(\d+)"',
+    '\.bind\(&".+:(\d+)"',
+    'TcpListener::bind\(\s*"[^"]*:(\d+)"',
+    'HttpServer::new\([^)]+\)\s*\.bind\("[^"]*:(\d+)"\)',
+]
+env_keys = ["PORT", "APP_PORT", "HTTP_PORT", "SERVER_PORT", "AXUM_PORT", "ROCKET_PORT"]

@@ -6,7 +6,7 @@ Canonical entry point for any agent or contributor working in this repo.
 
 ## What this repo is
 
-A Rust CLI (`sandbox`) that wraps Docker to provide **secure-by-default** isolated dev environments for **untrusted code**. Born from a real DPRK Lazarus malware incident (see [`docs/threat-model.md`](docs/threat-model.md)).
+A Rust CLI (`sandbox`) that wraps Docker to provide **secure-by-default** isolated dev environments for **untrusted code**. Born from a real DPRK Lazarus malware incident (see [`docs/sandbox/threat-model.md`](docs/sandbox/threat-model.md)).
 
 Design tenets:
 - **Paranoid defaults.** Volumes read-only, no internet, no caps, ephemeral `$HOME`. Trust is opt-in.
@@ -21,11 +21,11 @@ sandbox/
 ├── crates/
 │   ├── sandbox-cli       bin: argparse, command dispatch, top-level orchestration
 │   ├── sandbox-core      domain: project, profile, hash, language manifest, lifecycle state
+│   │   └── languages/    bundled builtin manifests (node, bun, rust) — `include_str!`'d, so they must live in-crate
 │   ├── sandbox-docker    adapter: docker CLI shell-out, compose lifecycle, network ops
 │   ├── sandbox-scan      adapter: YARA + heuristic regex + scan cache
 │   └── sandbox-proxy     adapter: Traefik label generation + sidecar lifecycle
-├── docs/                 architecture (sad), requirements (srs), playbook, ADRs, threat model, roadmap
-├── languages/            language manifests (TOML)
+├── docs/sandbox/                 architecture (sad), requirements (srs), playbook, ADRs, threat model, roadmap
 └── scripts/dev/          lint.sh, test.sh, fmt.sh
 ```
 
@@ -35,27 +35,29 @@ Each `crates/*/` has its own `AGENTS.md` with responsibility + conventions speci
 
 In order:
 
-1. [`docs/threat-model.md`](docs/threat-model.md) — what's in/out of scope, defines security posture
-2. [`docs/srs.md`](docs/srs.md) — CLI surface (subcommands, flags, exit codes)
-3. [`docs/sad.md`](docs/sad.md) — crate boundaries, dataflow, key abstractions
-4. [`docs/playbook.md`](docs/playbook.md) — coding conventions
-5. [`docs/roadmap.md`](docs/roadmap.md) — current phase + what's next
-6. The crate-level `AGENTS.md` of whatever you're working on
-7. [`docs/adrs/`](docs/adrs/) when touching cross-cutting decisions
-8. [`docs/open-questions.md`](docs/open-questions.md) — unresolved stuff
+1. [`docs/sandbox/threat-model.md`](docs/sandbox/threat-model.md) — what's in/out of scope, defines security posture
+2. [`docs/sandbox/srs.md`](docs/sandbox/srs.md) — CLI surface (subcommands, flags, exit codes)
+3. [`docs/sandbox/usage.md`](docs/sandbox/usage.md) — how each command is used + the network model (`--network` vs `net`)
+4. [`docs/sandbox/sad.md`](docs/sandbox/sad.md) — crate boundaries, dataflow, key abstractions
+5. [`docs/sandbox/playbook.md`](docs/sandbox/playbook.md) — coding conventions
+6. [`docs/sandbox/roadmap.md`](docs/sandbox/roadmap.md) — current phase + what's next
+7. [`docs/sandbox/smoke-tests.md`](docs/sandbox/smoke-tests.md) — copy-paste recipes to verify every shipped feature; the canonical answer to "does X work?"
+8. The crate-level `AGENTS.md` of whatever you're working on
+9. [`docs/sandbox/adrs/`](docs/sandbox/adrs/) when touching cross-cutting decisions
+10. [`docs/sandbox/open-questions.md`](docs/sandbox/open-questions.md) — unresolved stuff
 
 ## Conventions (high level)
 
-Full text in [`docs/playbook.md`](docs/playbook.md). Highlights:
+Full text in [`docs/sandbox/playbook.md`](docs/sandbox/playbook.md). Highlights:
 
-- **Errors:** `thiserror` for library crates (typed enums), `anyhow` only at the CLI boundary. No `unwrap()`, no `expect()`, no `panic!()` outside tests. Lints enforce.
+- **Errors:** `thiserror` everywhere — library crates **and** the CLI binary. No `anyhow` (ADR-0011). No `unwrap()` / `expect()` / `panic!()` in non-test code; tests return `Result<(), Box<dyn Error>>` and use `?`. Lints enforce.
 - **`unsafe` is forbidden** at workspace level.
 - **File size:** soft 300 LOC, hard 500. If a file grows past, split.
 - **Function size:** soft 50 LOC, hard 100.
 - **Comments:** WHY only. Names carry the WHAT.
 - **Doc comments (`///`):** required on every public item in `sandbox-core`. Optional in adapters but encouraged for non-trivial APIs.
 - **Commits:** Conventional Commits. `feat(scan): ...`, `fix(docker): ...`, `docs(adr): ...`. Use the affected crate name as scope.
-- **Branches:** Git Flow lite. `main` always builds. Feature branches off `main`, squash merge.
+- **Branches:** Git Flow. `main` is release-tagged and always builds; `dev` is the integration branch; `feat/*` branches off `dev` and merges back via squash.
 
 ## Things to NOT do
 
@@ -74,8 +76,12 @@ Each crate owns its own conventions for its domain. When working inside `crates/
 
 | Task | What to touch |
 |---|---|
-| Add a language stack | Drop `languages/<name>.toml`. No code change. |
-| Add a scan rule | `crates/sandbox-scan/rules/` (YARA) or `crates/sandbox-scan/src/heuristics/` (regex). Add tests. |
-| Add a subcommand | `crates/sandbox-cli/src/commands/<name>.rs` + register in `commands/mod.rs` + update `docs/srs.md`. |
+| Add a language stack (user) | Drop `<name>.toml` in `~/.config/sandbox/languages/`. Loaded at runtime. No code change. |
+| Add a **builtin** language | Add `<name>.toml` under `crates/sandbox-core/languages/` + a `BUILTIN_*` `include_str!` const in `sandbox-core/src/lang.rs` (builtins are compiled in, so they must live in-crate to be published). |
+| Add a scan rule | `crates/sandbox-scan/src/yara/rules/` (YARA) or `crates/sandbox-scan/src/heuristics/` (regex) or `crates/sandbox-scan/src/compose/rules.rs` (compose). Add fixtures + recipe in `docs/sandbox/smoke-tests.md`. Bump `RULESET_VERSION` in `cache.rs` so cached scans re-evaluate. |
+| Add a subcommand | `crates/sandbox-cli/src/commands/<name>.rs` + register in `commands/mod.rs` + update `docs/sandbox/srs.md` + add a recipe in `docs/sandbox/smoke-tests.md`. |
 | Change Docker behavior | `crates/sandbox-docker/`. Document deviation from previous via ADR if user-visible. |
-| Change network/security defaults | Requires ADR. Update `docs/threat-model.md`. |
+| Change network/security defaults | Requires ADR. Update `docs/sandbox/threat-model.md`. |
+| Add an exit code | Update `docs/sandbox/srs.md` § Global, `cli::Error::exit_code()`, and add a smoke recipe asserting it. |
+
+
