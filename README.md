@@ -21,13 +21,13 @@ The premise: **paranoid by default**. Unsafe behavior is opt-in, not opt-out.
 ```sh
 cargo install sandbox-cli            # installs the `sandbox` binary
 # or straight from git, no crates.io needed:
-cargo install --git https://github.com/JohnnyCarreiro/sandbox sandbox-cli
+cargo install --git https://github.com/ConsoliDados/sandbox sandbox-cli
 ```
 
 **With `install.sh`** (no Rust once prebuilt binaries ship; today it falls back to `cargo install`):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/JohnnyCarreiro/sandbox/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ConsoliDados/sandbox/main/install.sh | sh
 ```
 
 Verify: `sandbox --version`.
@@ -92,11 +92,11 @@ sandbox/
 ├── crates/
 │   ├── sandbox-cli/      bin (clap, subcommand dispatch)
 │   ├── sandbox-core/     domain types, project hash, lifecycle, profiles
+│   │   └── languages/    bundled builtin manifests (node, bun, rust) — compiled in
 │   ├── sandbox-docker/   docker shell-out, compose lifecycle, network ops, scanner
 │   ├── sandbox-scan/     YARA + heuristics + compose validator + ClamAV parser + cache
 │   └── sandbox-proxy/    Traefik labels, sidecar lifecycle (Phase 5)
 ├── docs/sandbox/                 architecture, playbook, threat model, ADRs, smoke tests
-├── languages/            TOML manifests (node, bun, rust, ...)
 └── scripts/dev/          lint, test, fmt helpers
 ```
 

@@ -1,16 +1,16 @@
 #!/bin/sh
 # install.sh — installer for `sandbox`
-#   https://github.com/JohnnyCarreiro/sandbox
+#   https://github.com/ConsoliDados/sandbox
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/JohnnyCarreiro/sandbox/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/ConsoliDados/sandbox/main/install.sh | sh
 #
 # WIP: prefers a prebuilt binary from the latest GitHub Release; falls back to
 # `cargo install` (build from source) until release binaries are published.
 # Override the install dir with SANDBOX_INSTALL_DIR (default: ~/.local/bin).
 set -eu
 
-REPO="JohnnyCarreiro/sandbox"
+REPO="ConsoliDados/sandbox"
 CRATE="sandbox-cli"        # crates.io package; ships the `sandbox` binary
 BIN="sandbox"
 INSTALL_DIR="${SANDBOX_INSTALL_DIR:-$HOME/.local/bin}"

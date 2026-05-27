@@ -7,7 +7,7 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Johnny Carreiro"]
-repository = "https://github.com/JohnnyCarreiro/sandbox"
+repository = "https://github.com/ConsoliDados/sandbox"
 rust-version = "1.85"
 
 [workspace.lints.rust]
