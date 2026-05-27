@@ -2,13 +2,35 @@
 
 Isolated, **secure-by-default** development environments in Docker for untrusted code (job interview challenges, OSS contributions, AI-generated code, etc.).
 
-> **Status:** 🟢 Phases 1–5 shipped on `dev` — full lifecycle, observability, three-motor scan pipeline (YARA + heuristics + compose + ClamAV), and a Traefik reverse proxy with `<slug>.sandbox.localhost:<PORT>` routing. 🟡 Phase 6 — runtime egress toggle (`sandbox net on/off`), project compose deps (`--with-deps`), and the `sandbox attach` re-entry command — is on `feat/phase-6-network-toggle`, landing next. See [`docs/sandbox/roadmap.md`](docs/sandbox/roadmap.md).
+> **Status:** 🟢 **v0.1.0 on [crates.io](https://crates.io/crates/sandbox-cli)** — `cargo install sandbox-cli`. Phases 1–6 shipped on `dev`: full lifecycle, observability, three-motor scan pipeline (YARA + heuristics + compose + ClamAV), a Traefik reverse proxy with `<slug>.sandbox.localhost:<PORT>` routing, runtime egress toggle (`sandbox net on/off`), project compose deps (`--with-deps`), and the `sandbox attach` re-entry command. 🟡 WIP toward release polish: prebuilt binaries + `install.sh`, CI, CHANGELOG. See [`docs/sandbox/roadmap.md`](docs/sandbox/roadmap.md).
 
 ## Why
 
 Born after a [Contagious Interview / DPRK Lazarus](docs/sandbox/threat-model.md#real-world-incident) incident where the previous shell-script `sandbox` (volume mount + no other isolation) almost let a payload persist on the host via the project directory.
 
 The premise: **paranoid by default**. Unsafe behavior is opt-in, not opt-out.
+
+## Install
+
+> 🚧 **WIP.** `cargo install` works today (builds from source). Prebuilt binaries and a no-Rust `install.sh` are landing soon.
+
+**Prerequisites:** [Docker](https://docs.docker.com/engine/install/) on `PATH` with the daemon running, and **`docker compose` v2** (the proxy and `--with-deps` use it). Linux is the v0.1 target; macOS/WSL2 are best-effort.
+
+**With Cargo** (needs the [Rust toolchain](https://rustup.rs)):
+
+```sh
+cargo install sandbox-cli            # installs the `sandbox` binary
+# or straight from git, no crates.io needed:
+cargo install --git https://github.com/JohnnyCarreiro/sandbox sandbox-cli
+```
+
+**With `install.sh`** (no Rust once prebuilt binaries ship; today it falls back to `cargo install`):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/JohnnyCarreiro/sandbox/main/install.sh | sh
+```
+
+Verify: `sandbox --version`.
 
 ## Quickstart
 
