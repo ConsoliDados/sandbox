@@ -190,7 +190,7 @@ supply chain) and first-class platform support are explicitly post-1.0. Target =
 
 ### A — Release engineering
 - [ ] Prebuilt binaries + CI release workflow on tag `v*` (then `install.sh` downloads a binary instead of falling back to `cargo install`).
-- [ ] PR CI: `cargo fmt --check` + `cargo clippy -- -D warnings` + `cargo test`.
+- [x] PR CI: `cargo fmt --check` + `cargo clippy -- -D warnings` + `cargo test` (+ `docker-tests` job + MSRV check). See [`docs/sandbox/release-process.md`](release-process.md).
 - [ ] GitHub Release object per tag (page + notes) + `CHANGELOG.md`.
 
 ### B — Hardening + polish (Phase 7)

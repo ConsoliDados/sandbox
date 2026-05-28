@@ -8,7 +8,7 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Johnny Carreiro"]
 repository = "https://github.com/ConsoliDados/sandbox"
-rust-version = "1.85"
+rust-version = "1.91"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

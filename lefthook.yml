@@ -1,0 +1,42 @@
+# Local git hooks runner — husky replacement (no Node dep).
+#
+# Install:
+#   cargo binstall lefthook       # or `yay -S lefthook` on Arch
+#   lefthook install              # writes .git/hooks/* shims
+#
+# Skip a single commit / push:
+#   LEFTHOOK=0 git commit ...
+#
+# Manual run:
+#   lefthook run pre-commit
+#   lefthook run pre-push
+#
+# Hook policy mirrors the CI workflow (.github/workflows/ci.yml):
+#   - pre-commit: fast format check only, so commits stay snappy
+#   - pre-push : full lint + default test pass (no docker-tests),
+#                same shape as the CI `lint` and `test` jobs
+
+# Silence lefthook's "core.hooksPath not supported" meta warning — we wire
+# hooks via .githooks/ shims on purpose (project-local binary, see
+# scripts/dev/install-hooks.sh).
+output:
+  - summary
+  - failure
+  - execution_out
+
+pre-commit:
+  parallel: true
+  commands:
+    fmt:
+      # `rustfmt --check` on the staged files (vs `cargo fmt --all` which only
+      # sees workspace members) so stray .rs files outside crates/ are caught
+      # too. Edition matches the workspace.
+      glob: "*.rs"
+      run: rustfmt --check --edition 2024 {staged_files}
+
+pre-push:
+  commands:
+    lint:
+      run: ./scripts/dev/lint.sh
+    test:
+      run: ./scripts/dev/test.sh

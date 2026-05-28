@@ -1,4 +1,6 @@
 /target
+# Project-local lefthook binary downloaded by scripts/dev/install-hooks.sh.
+/bin/
 **/*.rs.bk
 *.pdb
 .env

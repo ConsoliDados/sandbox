@@ -42,9 +42,10 @@ In order:
 5. [`docs/sandbox/playbook.md`](docs/sandbox/playbook.md) — coding conventions
 6. [`docs/sandbox/roadmap.md`](docs/sandbox/roadmap.md) — current phase + what's next
 7. [`docs/sandbox/smoke-tests.md`](docs/sandbox/smoke-tests.md) — copy-paste recipes to verify every shipped feature; the canonical answer to "does X work?"
-8. The crate-level `AGENTS.md` of whatever you're working on
-9. [`docs/sandbox/adrs/`](docs/sandbox/adrs/) when touching cross-cutting decisions
-10. [`docs/sandbox/open-questions.md`](docs/sandbox/open-questions.md) — unresolved stuff
+8. [`docs/sandbox/release-process.md`](docs/sandbox/release-process.md) — Git Flow, CI gate, branch-protection rules
+9. The crate-level `AGENTS.md` of whatever you're working on
+10. [`docs/sandbox/adrs/`](docs/sandbox/adrs/) when touching cross-cutting decisions
+11. [`docs/sandbox/open-questions.md`](docs/sandbox/open-questions.md) — unresolved stuff
 
 ## Conventions (high level)
 
