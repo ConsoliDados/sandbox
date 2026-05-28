@@ -4,7 +4,7 @@ Source of truth for "what's done, what's next, where are we." A fresh session sh
 
 ## Current status
 
-**Phase 6 — runtime network toggle + project compose.** In progress on `feat/phase-6-network-toggle`. Phase 5 (reverse proxy) merged into `dev` via PR #4.
+**v0.1.0 shipped** — published to crates.io (`cargo install sandbox-cli`) and released to `main` (2026-05-27). Phases 1–6 complete on `dev`/`main`. Next milestone: **1.0.0** — see [§ Road to 1.0.0](#road-to-100).
 
 `sandbox run/down/nuke/ps/logs/exec/scan/proxy` are wired end-to-end against a real Docker daemon. Pre-flight scan runs before `docker run` in safe/paranoid (`--with-clamav` adds the AV motor); blocking findings (severity ≥ High) exit 30. `sandbox proxy start` brings up Traefik with one entryPoint per registered port; project containers join both `sandbox-internal` (egress restricted) and `sandbox-proxy` (Traefik routing). Reachable via `<slug>.sandbox.localhost:<PORT>` — `.localhost` resolves to loopback per RFC 6761, so no `/etc/hosts` edits needed.
 
@@ -180,3 +180,34 @@ the remaining work is captured as an ordered backlog. See:
 
 Distribution: published to crates.io as `sandbox-cli` (binary stays `sandbox`) **and** prebuilt
 binaries via CI, with `install.sh` and `cargo install`.
+
+## Road to 1.0.0
+
+v0.1.0 shipped (crates.io + `main`, 2026-05-27). **1.0.0 = a complete CLI surface +
+real distribution + the Phase 7 hardening + persistent trust.** Phase 8 (image
+supply chain) and first-class platform support are explicitly post-1.0. Target =
+**A + B + C + D** below.
+
+### A — Release engineering
+- [ ] Prebuilt binaries + CI release workflow on tag `v*` (then `install.sh` downloads a binary instead of falling back to `cargo install`).
+- [ ] PR CI: `cargo fmt --check` + `cargo clippy -- -D warnings` + `cargo test`.
+- [ ] GitHub Release object per tag (page + notes) + `CHANGELOG.md`.
+
+### B — Hardening + polish (Phase 7)
+- [ ] `--print-cmd` on every command; `--dry-run` end-to-end.
+- [ ] CPU/memory limits from the profile — sane defaults baked in, user overrides in `config.toml`.
+- [ ] Optional image digest pinning (closes the mutable-tag swap vector).
+- [ ] Docs site (mdbook) — hosting TBD (ConsoliDados site / GitHub Pages / mdbook).
+
+### C — Complete the CLI surface
+- [ ] Implement `sandbox lang list|show|add|validate` (today returns `NotImplemented`).
+- [ ] Implement `sandbox config edit|show|path` (today returns `NotImplemented`).
+
+### D — Trust + scan defaults
+- [ ] **OQ-003** — persistent trust (`trusted.toml`: project hash → trust level) so frequently-used projects skip the trust dial.
+- [ ] **OQ-002** — a commit-from-sandbox path: let legit changes (esp. lockfiles created in the named volume) be committed without dropping to `--unsafe`. The source is `:ro` and lockfiles live in a volume, so today only `--unsafe` + commit-from-host works. Candidate: a `sandbox sync-lock` (copy lockfile volume→host) or a surgical RW mount of `.git`.
+- [ ] `paranoid` profile runs ClamAV **mandatorily** (today it's opt-in via `--with-clamav`).
+
+### Post-1.0 (stays on the roadmap)
+- **Platform & surface (1.1+):** macOS / WSL2 best-effort → first-class; a formal CLI-surface stability guarantee; more bundled language manifests.
+- **Phase 8 — image supply chain:** signing/cosign, CVE scan, layer scan (pending OQ-008).
