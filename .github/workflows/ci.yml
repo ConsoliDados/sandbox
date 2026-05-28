@@ -62,12 +62,13 @@ jobs:
         run: cargo test --workspace
 
   msrv:
-    name: msrv (1.85)
+    name: msrv (1.91)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # Guards the `rust-version = "1.85"` claim in workspace Cargo.toml.
-      - uses: dtolnay/rust-toolchain@1.85
+      # Guards the `rust-version = "1.91"` claim in workspace Cargo.toml.
+      # Floor set by transitive deps (yara-x → wasmtime → cranelift) requiring 1.91.
+      - uses: dtolnay/rust-toolchain@1.91
       - uses: Swatinem/rust-cache@v2
       - name: cargo check
         run: cargo check --workspace --all-targets

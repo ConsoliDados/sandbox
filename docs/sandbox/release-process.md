@@ -90,7 +90,7 @@ where the cost of a thorough check is justified.
 |---------------|---------------|----------------------------------------------------------|:---:|:---:|---|
 | `lint`        | ubuntu-latest | `cargo fmt --check` + `cargo clippy -- -D warnings`      | ✅ | ✅ | yes |
 | `test`        | ubuntu-latest | `cargo test --workspace` (no docker-tests)               | ✅ | ✅ | yes |
-| `msrv`        | ubuntu-latest | `cargo check --workspace --all-targets` on Rust **1.85** | ✅ | ✅ | yes |
+| `msrv`        | ubuntu-latest | `cargo check --workspace --all-targets` on Rust **1.91** | ✅ | ✅ | yes |
 | `test-macos`  | macos-latest  | `cargo test --workspace`                                 | ❌ | ✅ | informational * |
 | `test-docker` | ubuntu-latest | `cargo test -p sandbox-cli --features docker-tests`      | ❌ | ✅ | yes (main only) |
 
@@ -145,7 +145,7 @@ state, not code, so they don't ship in this repo. Apply once per repo.
 - ☑ Require status checks to pass before merging:
   - `lint (fmt + clippy)`
   - `test (ubuntu-latest)`
-  - `msrv (1.85)`
+  - `msrv (1.91)`
   - `test-docker`
   - *(promote `test (macos-latest)` here once stable)*
 - ☑ Require branches to be up to date before merging
@@ -163,7 +163,7 @@ Lighter gate — only the cheap jobs run here.
 - ☑ Require status checks to pass before merging:
   - `lint (fmt + clippy)`
   - `test (ubuntu-latest)`
-  - `msrv (1.85)`
+  - `msrv (1.91)`
 - ☑ Require branches to be up to date before merging
 - ☑ Allow squash merging only (disable merge commits + rebase for `dev` PRs)
 - ☐ Approvals not required (solo dev; flip to 1 once the project takes contributors)
@@ -183,7 +183,7 @@ gh api -X PUT \
   -f required_status_checks.strict=true \
   -f 'required_status_checks.contexts[]=lint (fmt + clippy)' \
   -f 'required_status_checks.contexts[]=test (ubuntu-latest)' \
-  -f 'required_status_checks.contexts[]=msrv (1.85)' \
+  -f 'required_status_checks.contexts[]=msrv (1.91)' \
   -f 'required_status_checks.contexts[]=test (docker-tests)' \
   -F enforce_admins=true \
   -F required_pull_request_reviews.required_approving_review_count=1 \
@@ -203,7 +203,7 @@ gh api -X PUT \
   -f required_status_checks.strict=true \
   -f 'required_status_checks.contexts[]=lint (fmt + clippy)' \
   -f 'required_status_checks.contexts[]=test (ubuntu-latest)' \
-  -f 'required_status_checks.contexts[]=msrv (1.85)' \
+  -f 'required_status_checks.contexts[]=msrv (1.91)' \
   -F enforce_admins=false \
   -F required_linear_history=true \
   -F allow_force_pushes=false \
