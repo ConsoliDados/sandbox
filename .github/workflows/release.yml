@@ -1,0 +1,225 @@
+name: Release
+
+# Triggered by pushing a SemVer tag from main (per docs/sandbox/release-process.md).
+# Produces:
+#   - prebuilt tarballs (sandbox-<target>.tar.gz) for 4 targets
+#   - aggregate SHA256SUMS file
+#   - a GitHub Release with notes from `git log` since the previous tag
+#   - cargo publish in dependency order (stable tags only, skipped for `-rc*`)
+#
+# Pre-requisites in the repo settings:
+#   - secret CARGO_REGISTRY_TOKEN  (crates.io API token, "publish-update" scope)
+#
+# Future targets (roadmap → v1.0.0): linux musl x86_64 (fully-static).
+
+on:
+  push:
+    tags: ["v*"]
+
+# Never cancel a release mid-flight — bad halves of a partial publish are worse
+# than waiting for an in-progress run.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write    # create release + upload assets
+
+jobs:
+  # ─── Cross-compile binaries ──────────────────────────────────────────────
+
+  build:
+    name: build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            cross: false
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            cross: true       # uses `cross` (qemu under the hood)
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            cross: false
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            cross: false
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain (stable, with target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+
+      - name: Build (cross)
+        if: matrix.cross
+        run: cross build --release --target ${{ matrix.target }} --bin sandbox -p sandbox-cli
+
+      - name: Build (native)
+        if: '!matrix.cross'
+        run: cargo build --release --target ${{ matrix.target }} --bin sandbox -p sandbox-cli
+
+      - name: Strip binary
+        run: strip "target/${{ matrix.target }}/release/sandbox" || true
+
+      # The install.sh contract — asset name MUST be `sandbox-<target>.tar.gz`
+      # containing `sandbox` at the tarball root.
+      - name: Package tarball + SHA256
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          asset="sandbox-${{ matrix.target }}.tar.gz"
+          tar -czf "dist/${asset}" -C "target/${{ matrix.target }}/release" sandbox
+          # macOS has `shasum`; Linux usually has both — prefer shasum for parity.
+          if command -v shasum >/dev/null 2>&1; then
+            (cd dist && shasum -a 256 "${asset}" > "${asset}.sha256")
+          else
+            (cd dist && sha256sum "${asset}" > "${asset}.sha256")
+          fi
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-${{ matrix.target }}
+          path: dist/*
+          retention-days: 1
+          if-no-files-found: error
+
+  # ─── Aggregate + create the GitHub Release ───────────────────────────────
+
+  release:
+    name: github release
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0    # full history for release-notes range
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Aggregate SHA256SUMS
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          # Drop the per-asset .sha256 files (we ship one aggregate).
+          rm -f -- *.sha256
+          shasum -a 256 sandbox-*.tar.gz > SHA256SUMS
+          echo "─── SHA256SUMS ───"
+          cat SHA256SUMS
+
+      - name: Build release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          prev="$(git tag --sort=-v:refname | grep -v "^${tag}$" | head -1 || true)"
+          if [ -n "$prev" ]; then
+            range="${prev}..${tag}"
+            header_range="${prev} → ${tag}"
+          else
+            range="${tag}"
+            header_range="(initial release)"
+          fi
+          {
+            echo "## Install"
+            echo
+            echo '```sh'
+            echo 'curl -fsSL https://raw.githubusercontent.com/ConsoliDados/sandbox/main/install.sh | sh'
+            echo '```'
+            echo
+            echo "Or pin a version:"
+            echo
+            echo '```sh'
+            echo "curl -fsSL https://raw.githubusercontent.com/ConsoliDados/sandbox/main/install.sh | SANDBOX_VERSION=${tag} sh"
+            echo '```'
+            echo
+            echo "Or download a tarball below and extract \`sandbox\` to your \`PATH\`."
+            echo
+            echo "## Changes (${header_range})"
+            echo
+            git log --pretty='format:- %s (%h)' "$range"
+            echo
+            echo
+            echo "## Verify"
+            echo
+            echo "All tarballs are hashed in \`SHA256SUMS\`:"
+            echo
+            echo '```sh'
+            echo "curl -L https://github.com/ConsoliDados/sandbox/releases/download/${tag}/SHA256SUMS"
+            echo "shasum -a 256 -c SHA256SUMS"
+            echo '```'
+          } > notes.md
+          echo "─── notes.md ───"
+          cat notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/sandbox-*.tar.gz
+            dist/SHA256SUMS
+          body_path: notes.md
+          draft: false
+          # Treat `vX.Y.Z-anything` as a prerelease (e.g. v0.2.0-rc1).
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+  # ─── Publish to crates.io (stable tags only) ─────────────────────────────
+
+  publish-crates:
+    name: publish to crates.io
+    runs-on: ubuntu-latest
+    needs: release
+    # Stable tags only — never publish `-rc*` / `-beta*` to crates.io.
+    if: '!contains(github.ref_name, ''-'')'
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # Publish in dependency order. `--no-verify` skips cargo's
+      # re-build-from-.crate verification, which would fail because crates.io
+      # needs a moment to index each upload before the next dep can resolve it.
+      # We trust the workspace build that already passed CI on main.
+      - name: Publish (ordered)
+        shell: bash
+        run: |
+          set -euo pipefail
+          publish() {
+            local crate="$1"
+            echo "::group::cargo publish -p ${crate}"
+            cargo publish -p "${crate}" --no-verify
+            echo "::endgroup::"
+            # crates.io index propagation lag — 30s is usually enough.
+            sleep 30
+          }
+          publish sandbox-cli-core
+          publish sandbox-docker
+          publish sandbox-scan
+          publish sandbox-proxy
+          # Last crate verifies against the now-published deps.
+          cargo publish -p sandbox-cli

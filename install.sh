@@ -5,9 +5,15 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/ConsoliDados/sandbox/main/install.sh | sh
 #
-# WIP: prefers a prebuilt binary from the latest GitHub Release; falls back to
-# `cargo install` (build from source) until release binaries are published.
-# Override the install dir with SANDBOX_INSTALL_DIR (default: ~/.local/bin).
+# Pin a specific version:
+#   curl -fsSL https://.../install.sh | SANDBOX_VERSION=v0.1.1 sh
+#
+# Override install dir (default: ~/.local/bin):
+#   curl -fsSL https://.../install.sh | SANDBOX_INSTALL_DIR=/opt/bin sh
+#
+# Prefers a prebuilt binary from a GitHub Release (sandbox-<target>.tar.gz
+# + SHA256SUMS); falls back to `cargo install` (build from source) only
+# when no matching binary exists or the platform isn't supported.
 set -eu
 
 REPO="ConsoliDados/sandbox"
@@ -19,6 +25,18 @@ say() { printf '%s\n' "$*"; }
 warn() { printf 'warning: %s\n' "$*" >&2; }
 err() { printf 'error: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# Hash a file as sha256, using whichever tool is available.
+# Echoes the bare hex digest (no filename suffix).
+sha256_of() {
+  if have shasum; then
+    shasum -a 256 "$1" | cut -d' ' -f1
+  elif have sha256sum; then
+    sha256sum "$1" | cut -d' ' -f1
+  else
+    return 1
+  fi
+}
 
 # Map `uname` to a Rust target triple. Empty output = unsupported platform.
 detect_target() {
@@ -37,23 +55,52 @@ detect_target() {
   printf '%s-%s' "$arch_part" "$os_part"
 }
 
-# Try to fetch a prebuilt binary from the latest GitHub Release.
-# Release assets must be named: sandbox-<target>.tar.gz  (containing `sandbox`).
-# Returns non-zero if there's no release or no asset for this platform.
+# Resolve the release tag to fetch. SANDBOX_VERSION wins if set.
+# Otherwise queries the GitHub API for `releases/latest`.
+resolve_tag() {
+  if [ -n "${SANDBOX_VERSION:-}" ]; then
+    printf '%s' "$SANDBOX_VERSION"
+    return 0
+  fi
+  curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
+    | grep -o '"tag_name"[ ]*:[ ]*"[^"]*"' | head -1 | cut -d'"' -f4
+}
+
+# Try to fetch a prebuilt binary + verify against SHA256SUMS.
+# Returns non-zero if no release, no asset for this platform, or hash mismatch.
 install_prebuilt() {
   target="$1"
   have curl || return 1
   have tar || return 1
-  tag="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
-    | grep -o '"tag_name"[ ]*:[ ]*"[^"]*"' | head -1 | cut -d'"' -f4)"
+
+  tag="$(resolve_tag)"
   [ -n "$tag" ] || return 1
-  url="https://github.com/$REPO/releases/download/$tag/$BIN-$target.tar.gz"
+
+  asset="$BIN-$target.tar.gz"
+  url="https://github.com/$REPO/releases/download/$tag/$asset"
+  sums_url="https://github.com/$REPO/releases/download/$tag/SHA256SUMS"
   tmp="$(mktemp -d)"
-  if ! curl -fsSL "$url" -o "$tmp/pkg.tar.gz" 2>/dev/null; then
+
+  if ! curl -fsSL "$url" -o "$tmp/$asset" 2>/dev/null; then
     rm -rf "$tmp"
     return 1
   fi
-  tar -xzf "$tmp/pkg.tar.gz" -C "$tmp" || { rm -rf "$tmp"; return 1; }
+
+  # Verify against the aggregate SHA256SUMS. Missing SHA256SUMS is treated
+  # as a hard error since releases produced by the workflow always include it.
+  if curl -fsSL "$sums_url" -o "$tmp/SHA256SUMS" 2>/dev/null; then
+    expected="$(grep -E "[ *]${asset}\$" "$tmp/SHA256SUMS" | head -1 | cut -d' ' -f1)"
+    actual="$(sha256_of "$tmp/$asset" 2>/dev/null || true)"
+    if [ -z "$expected" ] || [ -z "$actual" ] || [ "$expected" != "$actual" ]; then
+      rm -rf "$tmp"
+      err "SHA256 mismatch on $asset (expected '$expected', got '$actual'). Aborting."
+    fi
+    say "sha256 verified: $actual"
+  else
+    warn "SHA256SUMS not found in release — skipping integrity check (older release?)"
+  fi
+
+  tar -xzf "$tmp/$asset" -C "$tmp" || { rm -rf "$tmp"; return 1; }
   mkdir -p "$INSTALL_DIR"
   cp "$tmp/$BIN" "$INSTALL_DIR/$BIN"
   chmod 0755 "$INSTALL_DIR/$BIN"
@@ -67,8 +114,14 @@ install_cargo() {
   have cargo || err "no prebuilt binary for your platform and cargo not found.
   Install Rust (https://rustup.rs) and re-run, or grab a binary from
   https://github.com/$REPO/releases"
-  say "no prebuilt binary available yet — building from source with cargo…"
-  cargo install "$CRATE"
+  say "no prebuilt binary available — building from source with cargo…"
+  if [ -n "${SANDBOX_VERSION:-}" ]; then
+    # Strip the leading `v` for crates.io version syntax.
+    ver="${SANDBOX_VERSION#v}"
+    cargo install "$CRATE" --version "$ver"
+  else
+    cargo install "$CRATE"
+  fi
   PATH_HINT_DIR="$HOME/.cargo/bin"
 }
 
