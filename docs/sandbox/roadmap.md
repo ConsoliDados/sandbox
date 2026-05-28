@@ -205,9 +205,9 @@ supply chain) and first-class platform support are explicitly post-1.0. Target =
 
 ### D — Trust + scan defaults
 - [ ] **OQ-003** — persistent trust (`trusted.toml`: project hash → trust level) so frequently-used projects skip the trust dial.
-- [ ] **OQ-002** — a commit-from-sandbox path: let legit changes (esp. lockfiles created in the named volume) be committed without dropping to `--unsafe`. The source is `:ro` and lockfiles live in a volume, so today only `--unsafe` + commit-from-host works. Candidate: a `sandbox sync-lock` (copy lockfile volume→host) or a surgical RW mount of `.git`.
 - [ ] `paranoid` profile runs ClamAV **mandatorily** (today it's opt-in via `--with-clamav`).
 
 ### Post-1.0 (stays on the roadmap)
+- **OQ-002 — commit-from-sandbox path:** 99% of projects ship their lockfiles (no commit-from-container needed), and the rare install/build *inside* the sandbox runs under `--unsafe` just fine — deferred until a real workflow demands it. Candidate when it does: a `sandbox sync-lock` (copy lockfile volume → host) or a surgical RW mount of `.git`.
 - **Platform & surface (1.1+):** macOS / WSL2 best-effort → first-class; a formal CLI-surface stability guarantee; more bundled language manifests.
 - **Phase 8 — image supply chain:** signing/cosign, CVE scan, layer scan (pending OQ-008).

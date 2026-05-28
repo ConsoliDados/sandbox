@@ -10,6 +10,8 @@ Born after a [Contagious Interview / DPRK Lazarus](docs/sandbox/threat-model.md#
 
 The premise: **paranoid by default**. Unsafe behavior is opt-in, not opt-out.
 
+> **What this is — and isn't.** A security-posture **dev tool for the day-to-day**: running client projects, take-home challenges, OSS PR reviews, AI-generated code — with sane isolation and minimal friction. **Not** a pentesting, red-team, or active-forensics tool. Those workflows are a different shape entirely.
+
 ## Install
 
 > 🚧 **WIP.** `cargo install` works today (builds from source). Prebuilt binaries and a no-Rust `install.sh` are landing soon.
