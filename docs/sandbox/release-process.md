@@ -72,7 +72,7 @@ else squashes — each merge to `dev` is one logical change, one commit.
    - **`publish-crates`** — `cargo publish` in dependency order (`sandbox-cli-core` → `sandbox-docker` → `sandbox-scan` → `sandbox-proxy` → `sandbox-cli`) with 30s sleeps for crates.io index propagation. Uses `--no-verify` on the intermediates. **Skipped automatically** when the tag contains `-` (e.g. `v0.2.0-rc1` is prerelease, no crates.io publish).
 9. **Back-merge** `main` into `dev` (`git checkout dev && git merge --no-ff main`) so the version bump propagates to the integration branch.
 
-**Pre-requisite (one-time):** add the `CARGO_REGISTRY_TOKEN` secret to the repo (Settings → Secrets and variables → Actions). Generate the token at https://crates.io/me with "Publish update" scope on the affected crates.
+**Pre-requisite (one-time):** add the `sandbox_CARGO_REGISTRY_TOKEN` secret to the repo (Settings → Secrets and variables → Actions). Generate the token at https://crates.io/me with "Publish update" scope on the 5 crates (`sandbox-cli`, `sandbox-cli-core`, `sandbox-docker`, `sandbox-scan`, `sandbox-proxy`). The workflow maps `secrets.sandbox_CARGO_REGISTRY_TOKEN` → standard `CARGO_REGISTRY_TOKEN` env var — project-scoped name so an org-wide token never publishes from the wrong repo.
 
 ### Hotfixes
 

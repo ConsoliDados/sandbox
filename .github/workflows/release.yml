@@ -8,7 +8,10 @@ name: Release
 #   - cargo publish in dependency order (stable tags only, skipped for `-rc*`)
 #
 # Pre-requisites in the repo settings:
-#   - secret CARGO_REGISTRY_TOKEN  (crates.io API token, "publish-update" scope)
+#   - secret `sandbox_CARGO_REGISTRY_TOKEN` (crates.io API token, "publish-update"
+#     scope on the 5 crates). Project-scoped naming so org-wide tokens never
+#     accidentally publish from the wrong repo; mapped to the standard cargo
+#     env var below.
 #
 # Future targets (roadmap → v1.0.0): linux musl x86_64 (fully-static).
 
@@ -195,7 +198,8 @@ jobs:
     # Stable tags only — never publish `-rc*` / `-beta*` to crates.io.
     if: '!contains(github.ref_name, ''-'')'
     env:
-      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      # Project-scoped secret → standard cargo env var. See header comment.
+      CARGO_REGISTRY_TOKEN: ${{ secrets.sandbox_CARGO_REGISTRY_TOKEN }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
