@@ -81,20 +81,35 @@ back-merge the same merge commit to `dev` after the tag.
 
 ## CI gate (what every PR must pass)
 
-The four jobs in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) run
-on `pull_request` to `dev`/`main` and on `push` to those same branches:
+The workflow at [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)
+**splits jobs by branch target**: cheap jobs run on every change as a quick
+safety net; heavy jobs (macOS, docker-tests) only run on the release path,
+where the cost of a thorough check is justified.
 
-| Job           | Runner          | What it runs                                              | Required for merge |
-|---------------|-----------------|-----------------------------------------------------------|--------------------|
-| `lint`        | ubuntu-latest   | `cargo fmt --check` + `cargo clippy -- -D warnings`       | yes                |
-| `test`        | ubuntu-latest   | `cargo test --workspace` (no docker-tests)                | yes                |
-| `test`        | macos-latest    | same                                                      | informational *    |
-| `test-docker` | ubuntu-latest   | `cargo test -p sandbox-cli --features docker-tests`       | yes                |
-| `msrv`        | ubuntu-latest   | `cargo check --workspace --all-targets` on Rust **1.85**  | yes                |
+| Job           | Runner        | Command                                                  | dev (PR + push) | release/* + main (PR + push) | Required |
+|---------------|---------------|----------------------------------------------------------|:---:|:---:|---|
+| `lint`        | ubuntu-latest | `cargo fmt --check` + `cargo clippy -- -D warnings`      | ✅ | ✅ | yes |
+| `test`        | ubuntu-latest | `cargo test --workspace` (no docker-tests)               | ✅ | ✅ | yes |
+| `msrv`        | ubuntu-latest | `cargo check --workspace --all-targets` on Rust **1.85** | ✅ | ✅ | yes |
+| `test-macos`  | macos-latest  | `cargo test --workspace`                                 | ❌ | ✅ | informational * |
+| `test-docker` | ubuntu-latest | `cargo test -p sandbox-cli --features docker-tests`      | ❌ | ✅ | yes (main only) |
 
 \* macOS stays informational until it's been green for a few weeks. Promote it
-to required by removing `continue-on-error` on the matrix entry and adding it to
-the branch-protection required-checks list.
+to required by removing `continue-on-error` on the job and adding it to the
+`main` branch-protection required-checks list.
+
+**Why the split:**
+- `dev` is the integration WIP branch — many small PRs per sprint. Running
+  the heavy battery on each one burns minutes (and time) for marginal gain.
+- `release/*` and `hotfix/*` PRs target `main`; that's where the full check
+  matters. macOS + docker-tests catch issues that `dev` accumulation hides.
+- `push: main` re-runs the full battery as defense-in-depth (the same
+  workflow that approved the release PR runs once more on the merged SHA).
+
+**Cost note:** this repo is public, so `macos-latest` minutes are free on
+GitHub Actions. If billing changes (private fork, policy shift), the macOS
+job is the first to disable; a self-hosted [docker-osx](https://github.com/sickcodes/docker-osx)
+runner is a candidate replacement.
 
 Locally, the same gates run via [`lefthook`](../../lefthook.yml), installed
 **project-locally** (binary at `./bin/lefthook`, shims in `.githooks/`, wired
@@ -128,10 +143,11 @@ state, not code, so they don't ship in this repo. Apply once per repo.
 - ☑ Require approvals: **1**
 - ☑ Dismiss stale approvals on new commits
 - ☑ Require status checks to pass before merging:
-  - `lint`
+  - `lint (fmt + clippy)`
   - `test (ubuntu-latest)`
+  - `msrv (1.85)`
   - `test-docker`
-  - `msrv`
+  - *(promote `test (macos-latest)` here once stable)*
 - ☑ Require branches to be up to date before merging
 - ☑ Require linear history
 - ☑ **Restrict who can push** — no direct pushes; only PRs
@@ -141,8 +157,13 @@ state, not code, so they don't ship in this repo. Apply once per repo.
 
 ### `dev` (integration)
 
+Lighter gate — only the cheap jobs run here.
+
 - ☑ Require a pull request before merging
-- ☑ Require status checks to pass before merging (same four as above)
+- ☑ Require status checks to pass before merging:
+  - `lint (fmt + clippy)`
+  - `test (ubuntu-latest)`
+  - `msrv (1.85)`
 - ☑ Require branches to be up to date before merging
 - ☑ Allow squash merging only (disable merge commits + rebase for `dev` PRs)
 - ☐ Approvals not required (solo dev; flip to 1 once the project takes contributors)
@@ -153,15 +174,17 @@ The CLI snippet below applies the `main` rules to `ConsoliDados/sandbox`. Run it
 once; rerun whenever you add a required check (e.g., a future `cargo-deny` job).
 Requires `gh auth status` showing admin scope on the repo.
 
+**`main` (heavy gate):**
+
 ```sh
 gh api -X PUT \
   /repos/ConsoliDados/sandbox/branches/main/protection \
   -H "Accept: application/vnd.github+json" \
   -f required_status_checks.strict=true \
-  -f 'required_status_checks.contexts[]=lint' \
+  -f 'required_status_checks.contexts[]=lint (fmt + clippy)' \
   -f 'required_status_checks.contexts[]=test (ubuntu-latest)' \
-  -f 'required_status_checks.contexts[]=test-docker' \
-  -f 'required_status_checks.contexts[]=msrv' \
+  -f 'required_status_checks.contexts[]=msrv (1.85)' \
+  -f 'required_status_checks.contexts[]=test (docker-tests)' \
   -F enforce_admins=true \
   -F required_pull_request_reviews.required_approving_review_count=1 \
   -F required_pull_request_reviews.dismiss_stale_reviews=true \
@@ -171,19 +194,37 @@ gh api -X PUT \
   -F restrictions=null
 ```
 
-For the source-branch restriction (`release/*`, `hotfix/*` only), use **Rulesets**
-via Settings → Rules → Rulesets — the legacy branch protection API doesn't
-express source patterns. The ruleset shape:
+**`dev` (light gate — heavy jobs don't run here, so don't require them):**
+
+```sh
+gh api -X PUT \
+  /repos/ConsoliDados/sandbox/branches/dev/protection \
+  -H "Accept: application/vnd.github+json" \
+  -f required_status_checks.strict=true \
+  -f 'required_status_checks.contexts[]=lint (fmt + clippy)' \
+  -f 'required_status_checks.contexts[]=test (ubuntu-latest)' \
+  -f 'required_status_checks.contexts[]=msrv (1.85)' \
+  -F enforce_admins=false \
+  -F required_linear_history=true \
+  -F allow_force_pushes=false \
+  -F allow_deletions=false \
+  -F restrictions=null
+```
+
+> **Important:** if `dev` required `test-docker` or `test (macos-latest)`,
+> every PR to `dev` would be stuck — those jobs are skipped there. The lists
+> above intentionally differ.
+
+For the source-branch restriction on `main` (`release/*`, `hotfix/*` only), use
+**Rulesets** via Settings → Rules → Rulesets — the legacy branch protection API
+doesn't express source patterns. The ruleset shape:
 
 - **Target**: branch `main`
 - **Bypass**: empty (no exceptions, including admins)
 - **Rules**: `pull_request` with `dismiss_stale_reviews_on_push: true`,
-  `required_approving_review_count: 1`; `required_status_checks` (same four
-  contexts); `non_fast_forward` denied; `required_signatures` (when ready)
+  `required_approving_review_count: 1`; `required_status_checks` (the main-gate
+  list above); `non_fast_forward` denied; `required_signatures` (when ready)
 - **Restrict pull request sources**: branches matching `release/*` or `hotfix/*`
-
-For `dev`, repeat the first `gh api` block against `/repos/ConsoliDados/sandbox/branches/dev/protection`
-without the source restriction (any short-lived branch can target `dev`).
 
 ---
 

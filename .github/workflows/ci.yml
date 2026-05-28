@@ -1,5 +1,22 @@
 name: CI
 
+# Pipeline split by branch target (see docs/sandbox/release-process.md):
+#
+#   - Cheap jobs (lint, test ubuntu, msrv) run on every PR/push to dev and main.
+#     ~2 min total with cache — basically free safety net on every change.
+#
+#   - Heavy jobs (test macos, test-docker) run only on the release path:
+#     PRs to main (= release/* and hotfix/* per branch protection) and
+#     pushes to main (post-merge revalidation, defense in depth).
+#
+# Rationale: dev is the integration WIP branch; running mac + docker-tests
+# on every feat/* PR is overkill. The release branch is the real quality gate.
+#
+# macOS billing note (2026-05): this repo is public → macos-latest minutes are
+# free. If that changes (private fork, GitHub policy shift), the macOS job can
+# be temporarily disabled and replaced with a self-hosted docker-osx runner
+# (https://github.com/sickcodes/docker-osx).
+
 on:
   pull_request:
     branches: [dev, main]
@@ -15,6 +32,8 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
+  # ─── Cheap jobs (always) ──────────────────────────────────────────────────
+
   lint:
     name: lint (fmt + clippy)
     runs-on: ubuntu-latest
@@ -32,14 +51,8 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
   test:
-    name: test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    # macOS is informational this round — see docs/sandbox/release-process.md.
-    continue-on-error: ${{ matrix.os == 'macos-latest' }}
+    name: test (ubuntu-latest)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -47,21 +60,6 @@ jobs:
       # Mirrors scripts/dev/test.sh (no docker-tests feature — that's the test-docker job).
       - name: cargo test
         run: cargo test --workspace
-
-  test-docker:
-    name: test (docker-tests)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Verify Docker daemon
-        run: docker version
-      # Pre-pull so the first lifecycle test doesn't race on the registry.
-      - name: Pre-pull base image
-        run: docker pull node:24.10.0
-      - name: cargo test --features docker-tests
-        run: cargo test -p sandbox-cli --features docker-tests
 
   msrv:
     name: msrv (1.85)
@@ -73,3 +71,40 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: cargo check
         run: cargo check --workspace --all-targets
+
+  # ─── Heavy jobs (release path only) ───────────────────────────────────────
+
+  test-macos:
+    name: test (macos-latest)
+    runs-on: macos-latest
+    # Informational until the platform stabilizes — we don't want a transient
+    # mac issue to block a release. Promote to required by removing this line
+    # and adding the job to branch protection.
+    continue-on-error: true
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && github.base_ref == 'main')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test
+        run: cargo test --workspace
+
+  test-docker:
+    name: test (docker-tests)
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && github.base_ref == 'main')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Verify Docker daemon
+        run: docker version
+      # Pre-pull so the first lifecycle test doesn't race on the registry.
+      - name: Pre-pull base image
+        run: docker pull node:24.10.0
+      - name: cargo test --features docker-tests
+        run: cargo test -p sandbox-cli --features docker-tests
