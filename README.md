@@ -1,8 +1,10 @@
 # sandbox
 
+[![CI](https://github.com/ConsoliDados/sandbox/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/ConsoliDados/sandbox/actions/workflows/ci.yml)
+
 Isolated, **secure-by-default** development environments in Docker for untrusted code (job interview challenges, OSS contributions, AI-generated code, etc.).
 
-> **Status:** 🟢 **v0.1.0 on [crates.io](https://crates.io/crates/sandbox-cli)** — `cargo install sandbox-cli`. Phases 1–6 shipped on `dev`: full lifecycle, observability, three-motor scan pipeline (YARA + heuristics + compose + ClamAV), a Traefik reverse proxy with `<slug>.sandbox.localhost:<PORT>` routing, runtime egress toggle (`sandbox net on/off`), project compose deps (`--with-deps`), and the `sandbox attach` re-entry command. 🟡 WIP toward release polish: prebuilt binaries + `install.sh`, CI, CHANGELOG. See [`docs/sandbox/roadmap.md`](docs/sandbox/roadmap.md).
+> **Status:** 🟢 **v0.1.0 on [crates.io](https://crates.io/crates/sandbox-cli)** — `cargo install sandbox-cli`. Phases 1–6 shipped on `dev`: full lifecycle, observability, three-motor scan pipeline (YARA + heuristics + compose + ClamAV), a Traefik reverse proxy with `<slug>.sandbox.localhost:<PORT>` routing, runtime egress toggle (`sandbox net on/off`), project compose deps (`--with-deps`), and the `sandbox attach` re-entry command. 🟡 WIP toward release polish: prebuilt binaries + `install.sh`, CHANGELOG. See [`docs/sandbox/roadmap.md`](docs/sandbox/roadmap.md).
 
 ## Why
 
@@ -130,6 +132,16 @@ Tests that need a live local Docker daemon are gated behind a feature flag:
 ```sh
 cargo test -p sandbox-cli --features docker-tests             # requires docker
 ```
+
+### Git hooks
+
+[`lefthook`](https://github.com/evilmartians/lefthook) runs the same gates locally that CI runs on PRs (see [`lefthook.yml`](lefthook.yml) and [`docs/sandbox/release-process.md`](docs/sandbox/release-process.md)). It's installed **project-locally** — the binary lives at `./bin/lefthook` (gitignored, pinned version), git hooks live in [`.githooks/`](.githooks) and are wired via `core.hooksPath`. No global `cargo install` or system package needed.
+
+```sh
+./scripts/dev/install-hooks.sh    # download lefthook to ./bin/, wire .githooks/
+```
+
+`pre-commit` runs `cargo fmt --check`; `pre-push` runs `scripts/dev/lint.sh` + `scripts/dev/test.sh` (no `docker-tests`). Skip a single push with `LEFTHOOK=0 git push`. Uninstall: `git config --unset core.hooksPath && rm -rf bin/`.
 
 ### Smoke tests
 
