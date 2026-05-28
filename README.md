@@ -19,10 +19,12 @@ The premise: **paranoid by default**. Unsafe behavior is opt-in, not opt-out.
 **With Cargo** (needs the [Rust toolchain](https://rustup.rs)):
 
 ```sh
-cargo install sandbox-cli            # installs the `sandbox` binary
-# or straight from git, no crates.io needed:
-cargo install --git https://github.com/ConsoliDados/sandbox sandbox-cli
+cargo install sandbox-cli            # installs the `sandbox` binary (stable, from crates.io)
+# from source — pin to `main` (stable); a plain --git builds the default `dev` branch:
+cargo install --git https://github.com/ConsoliDados/sandbox --branch main sandbox-cli
 ```
+
+> ⚠️ **Branches.** The repo's **default branch is `dev`** (active development — may be unstable). Stable, production code lives on **`main`**, which is release-tagged. **Building or cloning from source? Use `main`** (`--branch main` above, or a tag like `--tag v0.1.0`) to avoid in-development bugs. `cargo install sandbox-cli` (crates.io) is already the stable release.
 
 **With `install.sh`** (no Rust once prebuilt binaries ship; today it falls back to `cargo install`):
 
