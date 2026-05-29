@@ -63,14 +63,16 @@ else squashes — each merge to `dev` is one logical change, one commit.
 2. `git checkout -b release/X.Y.Z dev`
 3. Bump `version` in workspace `Cargo.toml` (and the matching `workspace.dependencies` entries) — single source of truth via `version.workspace = true`.
 4. Update `CHANGELOG.md` (next PR will automate this with `git-cliff`).
-5. Push, open PR `release/X.Y.Z → main`. CI runs the same four jobs as any other PR.
+5. Push, open PR `release/X.Y.Z → main`. CI runs the full battery (lint + test ubuntu + msrv + test-docker + test-macos) on this PR.
 6. Once green and approved, merge **with a merge commit** (no squash).
-7. On `main`, tag the merge commit: `git tag -s vX.Y.Z -m "vX.Y.Z"` and push the tag.
-8. The release workflow (next PR) picks up `push: tags: v*` and produces:
-   - cross-compiled binaries (`linux-x86_64`, `linux-aarch64`, `darwin-x86_64`, `darwin-aarch64`)
-   - a GitHub Release object with notes from the CHANGELOG entry
-   - `cargo publish` for `sandbox-cli-core`, `sandbox-docker`, `sandbox-scan`, `sandbox-proxy`, then `sandbox-cli` (in dependency order)
-9. **Back-merge** `main` into `dev` (`git checkout dev && git merge --no-ff main`) so the version bump and any release-only fixes propagate.
+7. On `main`, tag the merge commit: `git tag -s vX.Y.Z -m "vX.Y.Z"` and `git push origin vX.Y.Z`.
+8. The release workflow ([`.github/workflows/release.yml`](../../.github/workflows/release.yml)) picks up the `push: tags: v*` trigger and runs:
+   - **`build`** — cross-compiles 4 targets: `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, `aarch64-apple-darwin`. Linux aarch64 uses `cross` (QEMU); the rest build natively. Each produces `sandbox-<target>.tar.gz` + a per-asset `.sha256`.
+   - **`release`** — aggregates an `SHA256SUMS` file, generates notes from `git log <prev-tag>..<tag>`, and creates the GitHub Release with all tarballs + `SHA256SUMS` attached.
+   - **`publish-crates`** — `cargo publish` in dependency order (`sandbox-cli-core` → `sandbox-docker` → `sandbox-scan` → `sandbox-proxy` → `sandbox-cli`) with 30s sleeps for crates.io index propagation. Uses `--no-verify` on the intermediates. **Skipped automatically** when the tag contains `-` (e.g. `v0.2.0-rc1` is prerelease, no crates.io publish).
+9. **Back-merge** `main` into `dev` (`git checkout dev && git merge --no-ff main`) so the version bump propagates to the integration branch.
+
+**Pre-requisite (one-time):** add the `CARGO_REGISTRY_TOKEN` secret to the repo (Settings → Secrets and variables → Actions). Generate the token at https://crates.io/me with **"Publish update"** scope (not "publish-new") on the 5 crates (`sandbox-cli`, `sandbox-cli-core`, `sandbox-docker`, `sandbox-scan`, `sandbox-proxy`). Repo secrets are already scoped to a single repo's workflows; the token's own crate scope is what limits blast radius if it leaks.
 
 ### Hotfixes
 

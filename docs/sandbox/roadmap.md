@@ -189,9 +189,11 @@ supply chain) and first-class platform support are explicitly post-1.0. Target =
 **A + B + C + D** below.
 
 ### A — Release engineering
-- [ ] Prebuilt binaries + CI release workflow on tag `v*` (then `install.sh` downloads a binary instead of falling back to `cargo install`).
-- [x] PR CI: `cargo fmt --check` + `cargo clippy -- -D warnings` + `cargo test` (+ `docker-tests` job + MSRV check). See [`docs/sandbox/release-process.md`](release-process.md).
-- [ ] GitHub Release object per tag (page + notes) + `CHANGELOG.md`.
+- [x] Prebuilt binaries + CI release workflow on tag `v*` for `x86_64`/`aarch64` Linux (glibc) and macOS — `install.sh` verifies SHA256, falls back to `cargo install` only when no asset matches. See [`docs/sandbox/release-process.md`](release-process.md).
+- [x] PR CI: `cargo fmt --check` + `cargo clippy -- -D warnings` + `cargo test` (+ `docker-tests` job + MSRV check).
+- [x] GitHub Release object per tag (page + notes auto-generated from `git log`).
+- [ ] Linux musl x86_64 (fully-static binary, distroless/Alpine-friendly) added to the release matrix.
+- [ ] `CHANGELOG.md` automation (`git-cliff`).
 
 ### B — Hardening + polish (Phase 7)
 - [ ] `--print-cmd` on every command; `--dry-run` end-to-end.
