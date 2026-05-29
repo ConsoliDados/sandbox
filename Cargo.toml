@@ -3,12 +3,12 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 authors = ["Johnny Carreiro"]
 repository = "https://github.com/ConsoliDados/sandbox"
-rust-version = "1.85"
+rust-version = "1.91"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -31,10 +31,10 @@ print_stderr = "allow"
 # `sandbox-cli-core`. The dependency KEY stays `sandbox-core` (and the lib name
 # stays `sandbox_core`), so `use sandbox_core::...` is unchanged everywhere.
 # `version` is required for a path dep to be publishable. See release-runbook.md.
-sandbox-core = { path = "crates/sandbox-core", version = "0.1.0", package = "sandbox-cli-core" }
-sandbox-docker = { path = "crates/sandbox-docker", version = "0.1.0" }
-sandbox-scan = { path = "crates/sandbox-scan", version = "0.1.0" }
-sandbox-proxy = { path = "crates/sandbox-proxy", version = "0.1.0" }
+sandbox-core = { path = "crates/sandbox-core", version = "0.1.1", package = "sandbox-cli-core" }
+sandbox-docker = { path = "crates/sandbox-docker", version = "0.1.1" }
+sandbox-scan = { path = "crates/sandbox-scan", version = "0.1.1" }
+sandbox-proxy = { path = "crates/sandbox-proxy", version = "0.1.1" }
 
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }

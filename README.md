@@ -1,8 +1,10 @@
 # sandbox
 
+[![CI](https://github.com/ConsoliDados/sandbox/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/ConsoliDados/sandbox/actions/workflows/ci.yml)
+
 Isolated, **secure-by-default** development environments in Docker for untrusted code (job interview challenges, OSS contributions, AI-generated code, etc.).
 
-> **Status:** 🟢 **v0.1.0 on [crates.io](https://crates.io/crates/sandbox-cli)** — `cargo install sandbox-cli`. Phases 1–6 shipped on `dev`: full lifecycle, observability, three-motor scan pipeline (YARA + heuristics + compose + ClamAV), a Traefik reverse proxy with `<slug>.sandbox.localhost:<PORT>` routing, runtime egress toggle (`sandbox net on/off`), project compose deps (`--with-deps`), and the `sandbox attach` re-entry command. 🟡 WIP toward release polish: prebuilt binaries + `install.sh`, CI, CHANGELOG. See [`docs/sandbox/roadmap.md`](docs/sandbox/roadmap.md).
+> **Status:** 🟢 **v0.1.0 on [crates.io](https://crates.io/crates/sandbox-cli)** — `cargo install sandbox-cli`, or `install.sh` for a prebuilt binary. Phases 1–6 shipped on `dev`: full lifecycle, observability, three-motor scan pipeline (YARA + heuristics + compose + ClamAV), a Traefik reverse proxy with `<slug>.sandbox.localhost:<PORT>` routing, runtime egress toggle (`sandbox net on/off`), project compose deps (`--with-deps`), and the `sandbox attach` re-entry command. 🟡 WIP toward release polish: musl static build, CHANGELOG automation. See [`docs/sandbox/roadmap.md`](docs/sandbox/roadmap.md).
 
 ## Why
 
@@ -10,25 +12,35 @@ Born after a [Contagious Interview / DPRK Lazarus](docs/sandbox/threat-model.md#
 
 The premise: **paranoid by default**. Unsafe behavior is opt-in, not opt-out.
 
+> **What this is — and isn't.** A security-posture **dev tool for the day-to-day**: running client projects, take-home challenges, OSS PR reviews, AI-generated code — with sane isolation and minimal friction. **Not** a pentesting, red-team, or active-forensics tool. Those workflows are a different shape entirely.
+
 ## Install
 
-> 🚧 **WIP.** `cargo install` works today (builds from source). Prebuilt binaries and a no-Rust `install.sh` are landing soon.
-
 **Prerequisites:** [Docker](https://docs.docker.com/engine/install/) on `PATH` with the daemon running, and **`docker compose` v2** (the proxy and `--with-deps` use it). Linux is the v0.1 target; macOS/WSL2 are best-effort.
+
+**With `install.sh`** — auto-detects your OS/arch, downloads the prebuilt tarball from the latest [GitHub Release](https://github.com/ConsoliDados/sandbox/releases), verifies SHA256, falls back to `cargo install` if no binary matches. No Rust required when a binary is available.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ConsoliDados/sandbox/main/install.sh | sh
+
+# pin a specific version:
+curl -fsSL https://raw.githubusercontent.com/ConsoliDados/sandbox/main/install.sh | SANDBOX_VERSION=v0.1.1 sh
+
+# custom install dir (default: ~/.local/bin):
+curl -fsSL https://raw.githubusercontent.com/ConsoliDados/sandbox/main/install.sh | SANDBOX_INSTALL_DIR=/opt/bin sh
+```
+
+Prebuilt targets: `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, `aarch64-apple-darwin`. Linux musl (static) is on the [v1.0 roadmap](docs/sandbox/roadmap.md#a--release-engineering).
 
 **With Cargo** (needs the [Rust toolchain](https://rustup.rs)):
 
 ```sh
-cargo install sandbox-cli            # installs the `sandbox` binary
-# or straight from git, no crates.io needed:
-cargo install --git https://github.com/ConsoliDados/sandbox sandbox-cli
+cargo install sandbox-cli            # installs the `sandbox` binary (stable, from crates.io)
+# from source — pin to `main` (stable); a plain --git builds the default `dev` branch:
+cargo install --git https://github.com/ConsoliDados/sandbox --branch main sandbox-cli
 ```
 
-**With `install.sh`** (no Rust once prebuilt binaries ship; today it falls back to `cargo install`):
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/ConsoliDados/sandbox/main/install.sh | sh
-```
+> ⚠️ **Branches.** The repo's **default branch is `dev`** (active development — may be unstable). Stable, production code lives on **`main`**, which is release-tagged. **Building or cloning from source? Use `main`** (`--branch main` above, or a tag like `--tag v0.1.0`) to avoid in-development bugs. `cargo install sandbox-cli` (crates.io) is already the stable release.
 
 Verify: `sandbox --version`.
 
@@ -126,6 +138,16 @@ Tests that need a live local Docker daemon are gated behind a feature flag:
 ```sh
 cargo test -p sandbox-cli --features docker-tests             # requires docker
 ```
+
+### Git hooks
+
+[`lefthook`](https://github.com/evilmartians/lefthook) runs the same gates locally that CI runs on PRs (see [`lefthook.yml`](lefthook.yml) and [`docs/sandbox/release-process.md`](docs/sandbox/release-process.md)). It's installed **project-locally** — the binary lives at `./bin/lefthook` (gitignored, pinned version), git hooks live in [`.githooks/`](.githooks) and are wired via `core.hooksPath`. No global `cargo install` or system package needed.
+
+```sh
+./scripts/dev/install-hooks.sh    # download lefthook to ./bin/, wire .githooks/
+```
+
+`pre-commit` runs `cargo fmt --check`; `pre-push` runs `scripts/dev/lint.sh` + `scripts/dev/test.sh` (no `docker-tests`). Skip a single push with `LEFTHOOK=0 git push`. Uninstall: `git config --unset core.hooksPath && rm -rf bin/`.
 
 ### Smoke tests
 

@@ -1,0 +1,21 @@
+#!/bin/sh
+# Shim that delegates to the project-local lefthook binary.
+# Falls back to a system `lefthook` on PATH if the local one is missing
+# (lets contributors use their own install if they prefer).
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+LEFTHOOK_BIN="${LEFTHOOK_BIN:-$repo_root/bin/lefthook}"
+
+if [ ! -x "$LEFTHOOK_BIN" ]; then
+  if command -v lefthook >/dev/null 2>&1; then
+    LEFTHOOK_BIN="$(command -v lefthook)"
+  else
+    echo "lefthook not found. Run scripts/dev/install-hooks.sh" >&2
+    exit 1
+  fi
+fi
+
+# --no-auto-install: skip lefthook's "sync .git/hooks" step that warns about
+#                    our custom core.hooksPath — we manage shims ourselves.
+exec "$LEFTHOOK_BIN" run --no-auto-install pre-commit "$@"
