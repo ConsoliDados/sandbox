@@ -142,7 +142,7 @@ state, not code, so they don't ship in this repo. Apply once per repo.
 ### `main` (production)
 
 - ☑ Require a pull request before merging
-- ☑ Require approvals: **1**
+- ☑ Require approvals: **0** *(solo-dev phase — promote to 1 when a regular contributor joins. With `enforce_admins: true`, asking for ≥1 deadlocks solo PRs since the author can't self-approve.)*
 - ☑ Dismiss stale approvals on new commits
 - ☑ Require status checks to pass before merging:
   - `lint (fmt + clippy)`
@@ -151,8 +151,8 @@ state, not code, so they don't ship in this repo. Apply once per repo.
   - `test-docker`
   - *(promote `test (macos-latest)` here once stable)*
 - ☑ Require branches to be up to date before merging
-- ☑ Require linear history
-- ☑ **Restrict who can push** — no direct pushes; only PRs
+- ☑ Require linear history *(forces squash on `release/* → main` — no merge commits)*
+- ☑ **Enforce admins** — admin bypass disabled; the owner is bound by the same gate
 - ☑ **Restrict pushes that create matching files** (Rulesets) — restrict source
   branches to `release/*` and `hotfix/*` patterns
 - ☐ Require signed commits *(recommended for v1.0)*
@@ -172,50 +172,31 @@ Lighter gate — only the cheap jobs run here.
 
 ### Apply via `gh api`
 
-The CLI snippet below applies the `main` rules to `ConsoliDados/sandbox`. Run it
-once; rerun whenever you add a required check (e.g., a future `cargo-deny` job).
-Requires `gh auth status` showing admin scope on the repo.
-
-**`main` (heavy gate):**
+The canonical configs live versioned at
+[`docs/sandbox/branch-protection/`](branch-protection/) — one JSON per branch,
+matching the GitHub API schema exactly. Apply them with two one-liners:
 
 ```sh
-gh api -X PUT \
-  /repos/ConsoliDados/sandbox/branches/main/protection \
-  -H "Accept: application/vnd.github+json" \
-  -f required_status_checks.strict=true \
-  -f 'required_status_checks.contexts[]=lint (fmt + clippy)' \
-  -f 'required_status_checks.contexts[]=test (ubuntu-latest)' \
-  -f 'required_status_checks.contexts[]=msrv (1.91)' \
-  -f 'required_status_checks.contexts[]=test (docker-tests)' \
-  -F enforce_admins=true \
-  -F required_pull_request_reviews.required_approving_review_count=1 \
-  -F required_pull_request_reviews.dismiss_stale_reviews=true \
-  -F required_linear_history=true \
-  -F allow_force_pushes=false \
-  -F allow_deletions=false \
-  -F restrictions=null
+gh api -X PUT /repos/ConsoliDados/sandbox/branches/main/protection --input docs/sandbox/branch-protection/main.json
+gh api -X PUT /repos/ConsoliDados/sandbox/branches/dev/protection  --input docs/sandbox/branch-protection/dev.json
 ```
 
-**`dev` (light gate — heavy jobs don't run here, so don't require them):**
+Rerun whenever you change a required status check (e.g. adding a future
+`cargo-deny` job or promoting `test (macos-latest)` to required) — update the
+JSON file in the repo, then reapply. The file is the source of truth; the live
+GitHub setting is a copy.
 
-```sh
-gh api -X PUT \
-  /repos/ConsoliDados/sandbox/branches/dev/protection \
-  -H "Accept: application/vnd.github+json" \
-  -f required_status_checks.strict=true \
-  -f 'required_status_checks.contexts[]=lint (fmt + clippy)' \
-  -f 'required_status_checks.contexts[]=test (ubuntu-latest)' \
-  -f 'required_status_checks.contexts[]=msrv (1.91)' \
-  -F enforce_admins=false \
-  -F required_linear_history=true \
-  -F allow_force_pushes=false \
-  -F allow_deletions=false \
-  -F restrictions=null
-```
+> **Why `--input <file>` instead of `gh api -f key.nested=val`?** Dot-notation
+> in `-f` does **not** construct nested JSON. The flag `-f required_status_checks.strict=true`
+> sends the literal string as a key; the API ignores it and returns
+> `"required_status_checks" wasn't supplied` even though you "passed" it. The
+> branch-protection endpoint needs a nested-object body — only `--input <file>`
+> with a real JSON works. See [`branch-protection/README.md`](branch-protection/README.md).
 
 > **Important:** if `dev` required `test-docker` or `test (macos-latest)`,
-> every PR to `dev` would be stuck — those jobs are skipped there. The lists
-> above intentionally differ.
+> every PR to `dev` would be stuck — those jobs are skipped there. The required
+> contexts in [`dev.json`](branch-protection/dev.json) intentionally differ from
+> [`main.json`](branch-protection/main.json).
 
 For the source-branch restriction on `main` (`release/*`, `hotfix/*` only), use
 **Rulesets** via Settings → Rules → Rulesets — the legacy branch protection API

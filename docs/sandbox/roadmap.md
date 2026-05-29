@@ -209,6 +209,27 @@ supply chain) and first-class platform support are explicitly post-1.0. Target =
 - [ ] **OQ-003** — persistent trust (`trusted.toml`: project hash → trust level) so frequently-used projects skip the trust dial.
 - [ ] `paranoid` profile runs ClamAV **mandatorily** (today it's opt-in via `--with-clamav`).
 
+### E — Expand detection coverage
+
+Today the YARA engine ships **one** rule file (`contagious_interview.yar`, the family that originated the project). The engine itself (`yara-x` via [`YaraEngine::builtin`](../../crates/sandbox-scan/src/yara/mod.rs)) is generic — it's the **catalog** that's intentionally minimal. To stay valuable beyond the originating incident, two priorities and one stretch:
+
+- [ ] **Bundle more curated families** (priority — the broader catch). Add `*.yar` files under `crates/sandbox-scan/src/yara/rules/` for high-confidence shapes that warrant default-block:
+  - **JS / npm supply-chain shapes** with stable IoCs (`ua-parser-js`-class postinstall hijacks, `event-stream`-class hidden-dep injectors, classic typosquat C2 patterns).
+  - **Discord/Telegram webhook exfil** patterns common in junior-bait challenges.
+  - **Crypto-stealer JS** (clipboard hijack + address-replace + wallet-API drain shapes).
+  - **Classic obfuscator signatures** when they're unambiguous (e.g. `obfuscator.io` headers in dependency code).
+  - Each family must ship with **both positive and negative fixtures** validating `clean_passes` (the FP-rate gate). Bump `RULESET_VERSION` in `cache.rs` per add so existing scan caches re-evaluate. See `sandbox-scan/AGENTS.md` "How to extend".
+
+- [ ] **User-overridable YARA rules** (the threat-intel / DFIR escape hatch). Load `*.yar` from `~/.config/sandbox/rules/` (XDG, same pattern as `languages/*.toml`) at engine startup, in addition to bundled. Config knob:
+  ```toml
+  [scan.yara]
+  extra_rule_dirs    = ["~/.config/sandbox/rules", "~/work/threat-intel/yara"]
+  severity_floor     = "warn"   # user rules below this floor never block; only flag in --explain
+  ```
+  Default `severity_floor = "warn"` so dropped-in public feeds (florianroth/signature-base et al.) **flag without blocking**, keeping default-mode usable. Power users (forensics, IR, threat hunters) drop their own curated `.yar` and the engine compiles them at startup — no rebuild needed.
+
+- [ ] *(Post-1.0)* **Feed subscription** — `sandbox scan --update-rules` pulling from curated public feeds (Elastic protections-artifacts, Abuse.ch YARAify, DFIR Report). Cached at `~/.cache/sandbox/yara/<feed>/`, signed manifest, severity always clamped to `warn` (only bundled/user-explicit blocks). Out of scope for 1.0 because it brings ongoing maintenance overhead (feed signing, version pinning, FP-mitigation per feed) — better proven first with the user-overridable path.
+
 ### Post-1.0 (stays on the roadmap)
 - **OQ-002 — commit-from-sandbox path:** 99% of projects ship their lockfiles (no commit-from-container needed), and the rare install/build *inside* the sandbox runs under `--unsafe` just fine — deferred until a real workflow demands it. Candidate when it does: a `sandbox sync-lock` (copy lockfile volume → host) or a surgical RW mount of `.git`.
 - **Platform & surface (1.1+):** macOS / WSL2 best-effort → first-class; a formal CLI-surface stability guarantee; more bundled language manifests.
