@@ -183,10 +183,21 @@ binaries via CI, with `install.sh` and `cargo install`.
 
 ## Road to 1.0.0
 
-v0.1.0 shipped (crates.io + `main`, 2026-05-27). **1.0.0 = a complete CLI surface +
-real distribution + the Phase 7 hardening + persistent trust.** Phase 8 (image
-supply chain) and first-class platform support are explicitly post-1.0. Target =
-**A + B + C + D** below.
+v0.1.0 shipped (crates.io + `main`, 2026-05-27). v0.1.1 followed (2026-05-29) — same surface, but **first tag through the new release pipeline** (CI gate + cross-compile + binaries + auto-publish). **1.0.0 = a complete CLI surface + real distribution + the Phase 7 hardening + persistent trust + a meaningful detection catalog.** Phase 8 (image supply chain) and first-class platform support are explicitly post-1.0. Target = **A + B + C + D + E** below.
+
+### Priority order (decided 2026-05-29 post-v0.1.1)
+
+Sections A→E below are grouped by **category**. The actual **ship order** is:
+
+1. **E.1** — Bundle more curated YARA families *(highest priority — the biggest user-visible defense gap; today the catalog is one family, the engine is generic)*
+2. **C.1 + E.2 bundled** — Implement `sandbox lang` **together with** user-overridable YARA rules (`sandbox rules` family). Both share the **XDG drop-in pattern** (`~/.config/sandbox/{languages,rules}/`), the manifest-loading helpers, and the `list|show|add|validate` subcommand shape. Shipping them apart writes the same plumbing twice.
+3. **C.2** — `sandbox config edit|show|path`
+4. **B** — Hardening (`--print-cmd` everywhere, `--dry-run`, CPU/mem limits, image digest pinning, mdbook)
+5. **D** — Trust + scan defaults (persistent trust, `paranoid` → mandatory ClamAV)
+6. **A cleanup** — Linux musl x86_64, CHANGELOG automation
+7. **E.3** — Feed subscription *(post-1.0)*
+
+This sequence puts **detection coverage first** (the strongest user-visible promise of the project — quality of the scan gate), then closes the **public CLI contract** (subcommands the SRS promises but the binary returns `NotImplemented`), then internal polish. The reason E.1 leads everything: the scan motor is generic but the catalog is minimal — any other YARA-catalogued family in the wild today passes through untouched. That's a bigger user-visible gap than any of the unimplemented subcommands.
 
 ### A — Release engineering
 - [x] Prebuilt binaries + CI release workflow on tag `v*` for `x86_64`/`aarch64` Linux (glibc) and macOS — `install.sh` verifies SHA256, falls back to `cargo install` only when no asset matches. See [`docs/sandbox/release-process.md`](release-process.md).
@@ -202,8 +213,8 @@ supply chain) and first-class platform support are explicitly post-1.0. Target =
 - [ ] Docs site (mdbook) — hosting TBD (ConsoliDados site / GitHub Pages / mdbook).
 
 ### C — Complete the CLI surface
-- [ ] Implement `sandbox lang list|show|add|validate` (today returns `NotImplemented`).
-- [ ] Implement `sandbox config edit|show|path` (today returns `NotImplemented`).
+- [ ] **C.1 — Ships bundled with E.2.** Implement `sandbox lang list|show|add|validate` AND `sandbox rules list|show|add|validate` in the same cycle. Both manage user-extensible drop-in directories under XDG config (`~/.config/sandbox/languages/*.toml` and `~/.config/sandbox/rules/*.yar` respectively); they reuse the same dir-scanner + validator + subcommand shape. See [Priority order](#priority-order).
+- [ ] **C.2** — Implement `sandbox config edit|show|path` (today returns `NotImplemented`).
 
 ### D — Trust + scan defaults
 - [ ] **OQ-003** — persistent trust (`trusted.toml`: project hash → trust level) so frequently-used projects skip the trust dial.
@@ -213,14 +224,14 @@ supply chain) and first-class platform support are explicitly post-1.0. Target =
 
 Today the YARA engine ships **one** rule file (`contagious_interview.yar`, the family that originated the project). The engine itself (`yara-x` via [`YaraEngine::builtin`](../../crates/sandbox-scan/src/yara/mod.rs)) is generic — it's the **catalog** that's intentionally minimal. To stay valuable beyond the originating incident, two priorities and one stretch:
 
-- [ ] **Bundle more curated families** (priority — the broader catch). Add `*.yar` files under `crates/sandbox-scan/src/yara/rules/` for high-confidence shapes that warrant default-block:
+- [ ] **E.1 — Bundle more curated families** *(next ship, highest priority across the whole 1.0 plan)*. Add `*.yar` files under `crates/sandbox-scan/src/yara/rules/` for high-confidence shapes that warrant default-block:
   - **JS / npm supply-chain shapes** with stable IoCs (`ua-parser-js`-class postinstall hijacks, `event-stream`-class hidden-dep injectors, classic typosquat C2 patterns).
   - **Discord/Telegram webhook exfil** patterns common in junior-bait challenges.
   - **Crypto-stealer JS** (clipboard hijack + address-replace + wallet-API drain shapes).
   - **Classic obfuscator signatures** when they're unambiguous (e.g. `obfuscator.io` headers in dependency code).
   - Each family must ship with **both positive and negative fixtures** validating `clean_passes` (the FP-rate gate). Bump `RULESET_VERSION` in `cache.rs` per add so existing scan caches re-evaluate. See `sandbox-scan/AGENTS.md` "How to extend".
 
-- [ ] **User-overridable YARA rules** (the threat-intel / DFIR escape hatch). Load `*.yar` from `~/.config/sandbox/rules/` (XDG, same pattern as `languages/*.toml`) at engine startup, in addition to bundled. Config knob:
+- [ ] **E.2 — User-overridable YARA rules** (the threat-intel / DFIR escape hatch). **Ships bundled with C.1** (`sandbox lang`/`sandbox rules` are sister subcommands over the same XDG drop-in pattern). Load `*.yar` from `~/.config/sandbox/rules/` (same pattern as `languages/*.toml`) at engine startup, in addition to bundled. Config knob:
   ```toml
   [scan.yara]
   extra_rule_dirs    = ["~/.config/sandbox/rules", "~/work/threat-intel/yara"]
@@ -228,7 +239,7 @@ Today the YARA engine ships **one** rule file (`contagious_interview.yar`, the f
   ```
   Default `severity_floor = "warn"` so dropped-in public feeds (florianroth/signature-base et al.) **flag without blocking**, keeping default-mode usable. Power users (forensics, IR, threat hunters) drop their own curated `.yar` and the engine compiles them at startup — no rebuild needed.
 
-- [ ] *(Post-1.0)* **Feed subscription** — `sandbox scan --update-rules` pulling from curated public feeds (Elastic protections-artifacts, Abuse.ch YARAify, DFIR Report). Cached at `~/.cache/sandbox/yara/<feed>/`, signed manifest, severity always clamped to `warn` (only bundled/user-explicit blocks). Out of scope for 1.0 because it brings ongoing maintenance overhead (feed signing, version pinning, FP-mitigation per feed) — better proven first with the user-overridable path.
+- [ ] **E.3** *(Post-1.0)* **Feed subscription** — `sandbox scan --update-rules` pulling from curated public feeds (Elastic protections-artifacts, Abuse.ch YARAify, DFIR Report). Cached at `~/.cache/sandbox/yara/<feed>/`, signed manifest, severity always clamped to `warn` (only bundled/user-explicit blocks). Out of scope for 1.0 because it brings ongoing maintenance overhead (feed signing, version pinning, FP-mitigation per feed) — better proven first with the user-overridable path.
 
 ### Post-1.0 (stays on the roadmap)
 - **OQ-002 — commit-from-sandbox path:** 99% of projects ship their lockfiles (no commit-from-container needed), and the rare install/build *inside* the sandbox runs under `--unsafe` just fine — deferred until a real workflow demands it. Candidate when it does: a `sandbox sync-lock` (copy lockfile volume → host) or a surgical RW mount of `.git`.
